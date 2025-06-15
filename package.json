@@ -1,0 +1,49 @@
+{
+  "name": "bimoji-workspace",
+  "version": "1.0.0",
+  "description": "Monorepo for handwriting evaluation system - Flutter apps and Python API",
+  "private": true,
+  "workspaces": [
+    "handwriting-eval-api",
+    "moji_manage_app",
+    "bimoji_app"
+  ],
+  "scripts": {
+    "setup": "npm run setup:flutter",
+    "setup:flutter": "cd moji_manage_app && flutter pub get && cd ../bimoji_app && flutter pub get",
+    "dev:flutter": "cd moji_manage_app && flutter run -d \"SH RM15\"",
+    "dev:flutter:basic": "cd bimoji_app && flutter run -d \"SH RM15\"",
+    "dev:flutter:web": "cd moji_manage_app && flutter run -d web-server --web-port 3000",
+    "dev:flutter:basic-web": "cd bimoji_app && flutter run -d web-server --web-port 3001",
+    "test:flutter": "cd moji_manage_app && flutter test && cd ../bimoji_app && flutter test",
+    "build:flutter": "cd moji_manage_app && flutter build apk && cd ../bimoji_app && flutter build apk",
+    "clean:flutter": "cd moji_manage_app && flutter clean && cd ../bimoji_app && flutter clean",
+    "lint:flutter": "cd moji_manage_app && flutter analyze && cd ../bimoji_app && flutter analyze",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f handwriting-eval-api",
+    "docker:rebuild": "docker-compose up --build -d",
+    "dev:api": "npm run docker:up && npm run docker:logs",
+    "dev": "concurrently \"npm run docker:up\" \"npm run dev:flutter\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "."
+  },
+  "keywords": [
+    "handwriting",
+    "evaluation",
+    "flutter",
+    "python",
+    "opencv",
+    "japanese"
+  ],
+  "author": "",
+  "license": "MIT"
+}

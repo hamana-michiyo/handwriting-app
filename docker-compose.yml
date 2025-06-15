@@ -1,0 +1,20 @@
+
+services:
+  handwriting-eval-api:
+    build:
+      context: ./handwriting-eval-api
+      dockerfile: .devcontainer/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./handwriting-eval-api:/workspace
+    working_dir: /workspace
+    command: uvicorn api_server:app --reload --host 0.0.0.0 --port 8001
+    environment:
+      - PYTHONPATH=/workspace
+    networks:
+      - bimoji-network
+
+networks:
+  bimoji-network:
+    driver: bridge
