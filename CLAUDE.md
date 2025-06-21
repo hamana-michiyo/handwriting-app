@@ -217,3 +217,189 @@ Flutterアプリは日本語手書き文字評価を対象としているため�
 - すべての依存関係がプリインストールされたPython環境
 - Flutter SDKとプラットフォームツールが設定済み
 - 実験的開発のためのJupyter notebookサポート
+
+## OCRフォーム処理システム (2025-06-21 実装)
+
+### 概要
+記入用紙からの手書き文字・数字自動抽出システム。トンボ（位置合わせマーク）検出による高精度補正と、機械学習データセット用文字画像切り出しを実現。
+
+### 主要コンポーネント
+
+#### 1. トンボ検出・歪み補正 (`src/core/fixed_form_processor.py`)
+```bash
+# 基本実行
+docker exec bimoji-workspace-handwriting-eval-api-1 python src/core/fixed_form_processor.py
+
+# 機能:
+# - 4点トンボ自動検出 (座標範囲指定)
+# - 透視変換による歪み補正
+# - 正確なアスペクト比計算
+```
+
+#### 2. ハイブリッド処理 (`src/core/hybrid_processor.py`)
+```bash
+# 実行方法
+docker exec bimoji-workspace-handwriting-eval-api-1 python src/core/hybrid_processor.py
+
+# 特徴:
+# - 文字: トンボ補正後の高精度切り出し
+# - 数字: 元画像からの直接OCR
+# - 用途別最適化処理
+```
+
+#### 3. 改良版OCR処理 (`src/core/improved_ocr_processor.py`) - **推奨**
+```bash
+# 最新版実行
+docker exec bimoji-workspace-handwriting-eval-api-1 python src/core/improved_ocr_processor.py
+
+# 改良点:
+# - 複数前処理手法の並列適用
+# - 文字と数字の特化型OCR
+# - デバッグ画像自動生成
+```
+
+### 処理フロー詳細
+
+#### Phase 1: トンボ検出
+```python
+# 検出対象座標 (元画像ベース)
+tombo_regions = [
+    (540, 190, 550, 200),   # 左上
+    (890, 190, 900, 200),   # 右上
+    (540, 1400, 550, 1410), # 左下
+    (890, 1400, 900, 1410)  # 右下
+]
+
+# 検出条件
+- サイズ範囲: 8-30ピクセル
+- 面積範囲: 50-900平方ピクセル
+- 形状スコア: 円形度 × アスペクト比
+```
+
+#### Phase 2: 透視変換
+```python
+# アスペクト比計算
+avg_width = (width_top + width_bottom) // 2
+avg_height = (height_left + height_right) // 2
+target_width = int(1200 * avg_width / avg_height)
+
+# 変換行列生成
+transform_matrix = cv2.getPerspectiveTransform(src_points, dst_points)
+corrected = cv2.warpPerspective(image, transform_matrix, (target_width, target_height))
+```
+
+#### Phase 3: 領域抽出
+
+**文字領域 (補正画像から相対座標)**:
+```python
+character_coords = [
+    ("清", 600, 810, 280, 470),   # x1, x2, y1, y2
+    ("炎", 600, 810, 700, 900), 
+    ("葉", 600, 810, 1110, 1310)
+]
+
+# トンボ領域内相対座標変換
+tombo_area = {545, 195, 895, 1405}  # x1, y1, x2, y2
+x1_rel = (x1 - 545) / (895 - 545)
+```
+
+**数字領域 (元画像から絶対座標)**:
+```python
+number_regions = [
+    ("記入者番号", 1800, 2300, 100, 170),
+    ("白評価1", 2220, 2330, 200, 300),
+    # ... 12個の評価数字領域
+]
+```
+
+#### Phase 4: OCR処理
+
+**数字用強化前処理**:
+```python
+preprocessing_methods = [
+    "otsu",              # Otsu二値化
+    "adaptive_mean",     # 適応的平均二値化  
+    "adaptive_gaussian", # 適応的ガウシアン二値化
+    "manual_light",      # 手動閾値(明)
+    "manual_dark"        # 手動閾値(暗)
+]
+
+ocr_configs = [
+    '--oem 3 --psm 8',   # 単語レベル
+    '--oem 3 --psm 10',  # 単一文字
+    '--oem 1 --psm 8'    # LSTM OCR
+]
+```
+
+### 性能指標 (記入sample.JPG)
+
+#### 文字画像切り出し: ✅ 100% (3/3)
+- 清: 高品質画像保存
+- 炎: 高品質画像保存  
+- 葉: 高品質画像保存
+
+#### 数字OCR: ✅ 約50% (6/12)
+- 記入者番号: 部分的成功 ("No. 3" → "7" 誤認識)
+- 評価数字: 約半数読み取り可能
+
+### デバッグ・トラブルシューティング
+
+#### 生成される画像ファイル
+```bash
+# 文字画像 (高精度)
+improved_char_清.jpg
+improved_char_炎.jpg  
+improved_char_葉.jpg
+
+# 数字画像 (OCR用)
+improved_num_記入者番号.jpg
+improved_num_白評価1.jpg
+# ... など
+
+# 前処理デバッグ画像
+improved_debug_記入者番号_otsu.jpg
+improved_debug_記入者番号_adaptive_mean.jpg
+# ... など
+```
+
+#### よくある問題と対処法
+
+1. **トンボ検出失敗**
+   - 原因: 画像品質、照明条件
+   - 対処: 検出範囲拡大、閾値調整
+
+2. **文字切り出し位置ズレ**
+   - 原因: 透視変換のアスペクト比誤計算
+   - 対処: トンボ間距離の再計算
+
+3. **OCR精度低下**
+   - 原因: 前処理不適切、フォント認識
+   - 対処: 複数前処理手法の並列実行
+
+### 次回開発予定
+
+#### 優先度: 高
+1. **API統合**: FastAPIエンドポイント作成
+2. **Flutter連携**: OCR結果確認UI実装
+3. **精度改善**: PaddleOCR統合検討
+
+#### 優先度: 中
+1. **バッチ処理**: 複数記入用紙の一括処理
+2. **学習データ**: OCR訂正結果の蓄積システム
+3. **性能最適化**: 処理時間短縮
+
+### 開発環境セットアップ
+
+```bash
+# Docker環境での開発
+npm run docker:up
+
+# OCRテスト実行
+docker exec bimoji-workspace-handwriting-eval-api-1 python src/core/improved_ocr_processor.py
+
+# 画像ファイル確認
+docker exec bimoji-workspace-handwriting-eval-api-1 ls improved_*.jpg
+
+# デバッグ画像の取得
+docker cp bimoji-workspace-handwriting-eval-api-1:/app/improved_char_清.jpg /tmp/
+```
