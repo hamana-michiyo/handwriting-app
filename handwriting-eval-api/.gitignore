@@ -61,3 +61,16 @@ docker-compose.override.yml
 
 # コンテナ関連の一時ファイル
 .docker/
+
+# ---- 手書き文字評価API特有 ----
+# デバッグ用の画像ファイル
+debug/
+*.jpg
+*.png
+
+# OCR処理で生成される一時ファイル
+improved_*.jpg
+dbg_*.jpg
+
+# 評価データの一時ファイル
+result/

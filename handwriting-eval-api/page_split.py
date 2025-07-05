@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import argparse
 import os
-
+import pytesseract
 
 # ----------------------------------------------------------------------
 # 0. 汎用ユーティリティ
@@ -273,6 +273,65 @@ ROI_FIXED = {
     ]
 }
 
+import cv2, pytesseract, numpy as np
+
+conf_tess = "--oem 3 --psm 10 -c tessedit_char_whitelist=0123456789"
+
+def read_digit(raw):
+    """枠付き ROI → 文字を返す (''=失敗)"""
+    # ----- 1. 縦罫線除去 -----
+    tmp = raw.copy()
+    #   a) Canny → HoughLinesP で垂直線を検出
+    edges = cv2.Canny(tmp, 50, 150)
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180,
+                            threshold=30, minLineLength=raw.shape[0]//2,
+                            maxLineGap=10)
+    if lines is not None:
+        for x1,y1,x2,y2 in lines[:,0]:
+            if abs(x1-x2) < 4:          # 垂直
+                cv2.line(tmp, (x1,0), (x2,raw.shape[0]-1), 255, 5)
+
+    # ----- 2. 最大輪郭 (数字) を切り抜く -----
+    _, bw = cv2.threshold(tmp,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    cnts, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return ""
+
+    # --- A) 面積上位 3 個を並べ替え
+    cands = sorted(cnts, key=cv2.contourArea, reverse=True)[:3]
+
+    best = None
+    best_score = 0
+    for c in cands:
+        x,y,w,h = cv2.boundingRect(c)
+        patch = bw[y:y+h, x:x+w]
+        density = (patch > 0).mean()          # 黒画素率
+        sc = cv2.contourArea(c) * density     # 面積×密度
+        if sc > best_score:
+            best, best_score = (x,y,w,h), sc
+
+    x,y,w,h = best
+    roi = raw[y:y+h, x:x+w]           # ← roi 再定義
+
+    # ----- 3. CLAHE ＋ 3 種二値化でリトライ -----
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    roi_eq = clahe.apply(roi)
+
+    for thr in [
+        lambda im: cv2.adaptiveThreshold(im,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                         cv2.THRESH_BINARY,11,2),
+        lambda im: cv2.threshold(im,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)[1],
+        lambda im: cv2.threshold(im,127,255,cv2.THRESH_BINARY)[1]
+    ]:
+        bin_im = thr(roi_eq)
+        up = cv2.resize(bin_im, None, fx=3, fy=3,
+                        interpolation=cv2.INTER_CUBIC)
+        txt = pytesseract.image_to_string(up, config=conf_tess).strip()
+        if txt.isdigit():          # 成功
+            return txt
+
+    return ""                      # 3 回とも失敗
+
 
 # ----------------------------------------------------------------------
 # 4. メインパイプライン
@@ -317,6 +376,9 @@ def split_page(img_path: Path, out_dir="out", dbg=False):
     # 4-3. 記入者 No. (固定比率)
     writer_roi = crop_by_ratio(warped_gray, ROI_FIXED["writer"])
     cv2.imwrite(str(out_dir / "writer_id.png"), writer_roi)
+    conf = "--psm 10 -c tessedit_char_whitelist=0123456789"
+    text = pytesseract.image_to_string(writer_roi, config=conf).strip()
+    print("記入者=" + text)
 
     # 4-4. 点数枠
     score_dir = out_dir / "scores"; ensure_dir(score_dir)
@@ -326,7 +388,11 @@ def split_page(img_path: Path, out_dir="out", dbg=False):
         raise RuntimeError(f"点数枠検出失敗: {e}")
     # 右端の 12 個を切り出し
     score_dir = out_dir / "scores"; ensure_dir(score_dir)
+    conf = "--oem 3 --psm 10 -c tessedit_char_whitelist=0123456789"
     for idx, (x1,y1,x2,y2) in enumerate(score_boxes, 1):
+        raw = warped_gray[y1:y2, x1:x2]
+        digit = read_digit(raw)
+        print(f"score_{idx}={digit or '–'}")  # 空文字なら – を表示
         cv2.imwrite(str(score_dir / f"score_{idx}.png"),
                     warped_gray[y1:y2, x1:x2])
 
