@@ -1,0 +1,64 @@
+# =====================================================
+# Render Deployment Configuration
+# 手書き文字評価 FastAPI サーバー
+# Created: 2025-01-06
+# =====================================================
+
+services:
+  - type: web
+    name: bimoji-api
+    runtime: python3
+    buildCommand: pip install -r requirements_api.txt
+    startCommand: uvicorn supabase_api_server:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    
+    # Environment Variables
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SUPABASE_URL
+        sync: false  # Set in Render dashboard
+      - key: SUPABASE_KEY
+        sync: false  # Set in Render dashboard (service_role key)
+      - key: SUPABASE_BUCKET
+        value: ml-data
+      - key: GEMINI_API_KEY
+        sync: false  # Set in Render dashboard
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: GEMINI_TIMEOUT
+        value: 30
+      - key: DEBUG_ENABLED
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MAX_IMAGE_SIZE
+        value: 2048
+      - key: IMAGE_QUALITY
+        value: 95
+      - key: CORS_ORIGINS
+        value: "*"  # Production では適切なオリジンを設定
+    
+    # Health Check
+    healthCheckPath: /health
+    
+    # Auto-deploy from Git
+    autoDeploy: true
+    
+    # Region (選択可能: oregon, ohio, singapore, frankfurt)
+    region: oregon
+    
+    # Scaling (Starter plan limits)
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+    
+    # Build settings
+    buildFilter:
+      paths:
+        - handwriting-eval-api/**
+      ignoredPaths:
+        - "**/*.md"
+        - "**/debug/**"
+        - "**/*.jpg"
+        - "**/*.png"

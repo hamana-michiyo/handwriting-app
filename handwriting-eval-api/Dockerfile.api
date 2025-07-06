@@ -1,0 +1,50 @@
+# =====================================================
+# FastAPI Supabase統合 手書き文字評価API
+# Docker Configuration for Production Deployment
+# Created: 2025-01-06
+# =====================================================
+
+FROM python:3.11-slim
+
+# システム依存関係インストール
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-jpn \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgthread-2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 作業ディレクトリ設定
+WORKDIR /app
+
+# Python依存関係をコピー・インストール
+COPY requirements_api.txt .
+RUN pip install --no-cache-dir -r requirements_api.txt
+
+# アプリケーションコードをコピー
+COPY . .
+
+# 環境変数設定
+ENV PYTHONPATH=/app
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata/
+ENV TESSERACT_CMD=/usr/bin/tesseract
+
+# ポート公開
+EXPOSE 8001
+
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# 非root ユーザー作成・設定
+RUN groupadd -r apiuser && useradd -r -g apiuser apiuser
+RUN chown -R apiuser:apiuser /app
+USER apiuser
+
+# アプリケーション起動
+CMD ["python", "-m", "uvicorn", "supabase_api_server:app", "--host", "0.0.0.0", "--port", "8001"]

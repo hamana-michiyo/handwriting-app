@@ -24,7 +24,11 @@
     "docker:logs": "docker-compose logs -f handwriting-eval-api",
     "docker:rebuild": "docker-compose up --build -d",
     "dev:api": "npm run docker:up && npm run docker:logs",
-    "dev": "concurrently \"npm run docker:up\" \"npm run dev:flutter\""
+    "dev:api:standalone": "cd handwriting-eval-api && python start_api.py",
+    "dev:api:supabase": "cd handwriting-eval-api && docker exec bimoji-workspace-handwriting-eval-api-1 python start_api.py",
+    "test:api": "cd handwriting-eval-api && python test_api.py",
+    "dev": "concurrently \"npm run docker:up\" \"npm run dev:flutter\"",
+    "dev:fullstack": "concurrently \"npm run dev:api:supabase\" \"npm run dev:flutter\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
