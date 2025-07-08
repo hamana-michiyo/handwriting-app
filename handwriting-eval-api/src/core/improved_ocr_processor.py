@@ -9,6 +9,9 @@ import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import torch
+from PIL import Image, ImageOps
+import torchvision.transforms as transforms
 
 # .env ファイルを読み込み
 load_dotenv()
@@ -28,6 +31,21 @@ except ImportError:
         logger.warning("Gemini API クライアントが利用できません")
 
 logger = logging.getLogger(__name__)
+
+class SimpleCNN(torch.nn.Module):
+    """MNIST+手書き数字認識用のCNNモデル"""
+    def __init__(self):
+        super(SimpleCNN, self).__init__()
+        self.conv1 = torch.nn.Conv2d(1, 16, 3, 1)
+        self.fc1 = torch.nn.Linear(26*26*16, 128)
+        self.fc2 = torch.nn.Linear(128, 11)  # 0〜10
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = x.view(-1, 26*26*16)
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 class ImprovedOCRProcessor:
     """改良版OCR処理クラス（page_split.pyロジック統合版）"""
@@ -54,6 +72,23 @@ class ImprovedOCRProcessor:
             except Exception as e:
                 logger.warning(f"Gemini API クライアント初期化失敗: {e}")
                 self.use_gemini = False
+        
+        # PyTorchモデルの初期化
+        self.pytorch_model = None
+        self.use_pytorch = False
+        try:
+            self.pytorch_model = SimpleCNN()
+            model_path = "/workspace/data/digit_model.pt"
+            if os.path.exists(model_path):
+                self.pytorch_model.load_state_dict(torch.load(model_path, map_location='cpu'))
+                self.pytorch_model.eval()
+                self.use_pytorch = True
+                logger.info("PyTorch数字認識モデル初期化成功")
+            else:
+                logger.warning(f"PyTorchモデルファイルが見つかりません: {model_path}")
+        except Exception as e:
+            logger.warning(f"PyTorchモデル初期化失敗: {e}")
+            self.use_pytorch = False
     
     def find_page_corners(self, gray: np.ndarray) -> Optional[np.ndarray]:
         """page_split.pyのページ検出ロジック"""
@@ -241,16 +276,24 @@ class ImprovedOCRProcessor:
             name = char_names[i]
             region_image = gray[y1:y2, x1:x2]
             
-            # デバッグ保存
-            char_file = self.debug_dir / f"improved_char_{name}.jpg"
-            cv2.imwrite(str(char_file), region_image)
-            logger.info(f"{name}文字領域保存: {char_file}")
+            # 補助線除去を適用
+            cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name)
             
-            # Gemini文字認識
-            gemini_result = self.recognize_character_with_gemini(region_image, name)
+            # デバッグ保存（補助線除去前）
+            char_file = self.debug_dir / f"improved_char_{name}_original.jpg"
+            cv2.imwrite(str(char_file), region_image)
+            
+            # デバッグ保存（補助線除去後）
+            char_file_cleaned = self.debug_dir / f"improved_char_{name}.jpg"
+            cv2.imwrite(str(char_file_cleaned), cleaned_region)
+            logger.info(f"{name}文字領域保存（補助線除去済み）: {char_file_cleaned}")
+            
+            # Gemini文字認識（補助線除去後の画像を使用）
+            gemini_result = self.recognize_character_with_gemini(cleaned_region, name)
             
             character_results[name] = {
-                "image": region_image,
+                "image": region_image,  # 元画像
+                "cleaned_image": cleaned_region,  # 補助線除去後
                 "bbox": (x1, y1, x2, y2),
                 "gemini_recognition": gemini_result
             }
@@ -264,6 +307,88 @@ class ImprovedOCRProcessor:
                 logger.info(f"{name} Gemini認識: 認識失敗")
         
         return character_results
+    
+    def remove_guidelines(self, image: np.ndarray, save_debug=False, debug_name="") -> np.ndarray:
+        """補助線除去（元手法ベース）"""
+        try:
+            # グレースケール変換
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image.copy()
+            
+            # ガウシアンブラー
+            blur = cv2.GaussianBlur(gray, (3, 3), 0)
+            
+            # 二値化（固定閾値127）
+            _, thresh = cv2.threshold(blur, 127, 255, cv2.THRESH_BINARY_INV)
+            
+            # モルフォロジー（軽め）
+            kernel = np.ones((2, 2), np.uint8)
+            opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
+            
+            # 反転して背景白・文字黒
+            result = cv2.bitwise_not(opening)
+            
+            # デバッグ保存
+            if save_debug and debug_name:
+                debug_file = self.debug_dir / f"guideline_removed_{debug_name}.jpg"
+                cv2.imwrite(str(debug_file), result)
+                logger.info(f"補助線除去結果保存: {debug_file}")
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"補助線除去エラー: {e}")
+            # エラー時は元画像をそのまま返す
+            return image
+    
+    def pytorch_digit_recognition(self, image: np.ndarray, region_name: str) -> Tuple[str, float]:
+        """PyTorchモデルによる数字認識"""
+        if not self.use_pytorch:
+            return "", 0.0
+        
+        try:
+            # OpenCV画像をPILに変換
+            if len(image.shape) == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                pil_image = Image.fromarray(image).convert('L')
+            else:
+                pil_image = Image.fromarray(image).convert('L')
+            
+            # 背景白・文字黒なら反転（MNISTに合わせる）
+            pil_image = ImageOps.invert(pil_image)
+            
+            # 余白を自動クロップ
+            bbox = pil_image.getbbox()
+            if bbox:
+                pil_image = pil_image.crop(bbox)
+            
+            # 28x28にリサイズ
+            transform = transforms.Compose([
+                transforms.Resize((28, 28)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5,), (0.5,))
+            ])
+            
+            input_tensor = transform(pil_image).unsqueeze(0)
+            
+            # 推論
+            with torch.no_grad():
+                output = self.pytorch_model(input_tensor)
+                _, predicted = torch.max(output.data, 1)
+                result = predicted.item()
+                
+                # 確信度を計算（softmax）
+                probabilities = torch.nn.functional.softmax(output, dim=1)
+                confidence = probabilities[0][result].item()
+                
+                logger.info(f"{region_name}: PyTorch認識 '{result}' (信頼度: {confidence:.2f})")
+                return str(result), confidence
+                
+        except Exception as e:
+            logger.error(f"PyTorch認識エラー ({region_name}): {e}")
+            return "", 0.0
     
     def preprocess_number_image(self, image: np.ndarray, debug_name: str) -> List[np.ndarray]:
         """数字画像の前処理（複数バリエーション生成）"""
@@ -323,8 +448,18 @@ class ImprovedOCRProcessor:
         return preprocessed_images
     
     def perform_enhanced_number_ocr(self, image: np.ndarray, region_name: str) -> Tuple[str, float]:
-        """強化された数字OCR"""
+        """強化された数字OCR（PyTorchモデル優先）"""
         
+        # PyTorchモデルを最初に試す
+        if self.use_pytorch:
+            pytorch_result, pytorch_conf = self.pytorch_digit_recognition(image, region_name)
+            if pytorch_result and pytorch_conf > 0.3:  # 信頼度閾値
+                logger.info(f"{region_name}: PyTorch成功 '{pytorch_result}' (信頼度: {pytorch_conf:.2f})")
+                return pytorch_result, pytorch_conf
+            else:
+                logger.info(f"{region_name}: PyTorch失敗、Tesseractにフォールバック")
+        
+        # Tesseractフォールバック
         # 複数の前処理画像を生成
         preprocessed_images = self.preprocess_number_image(image, region_name.replace(' ', '_'))
         
@@ -402,7 +537,7 @@ class ImprovedOCRProcessor:
                 except Exception:
                     continue
         
-        logger.info(f"{region_name} 最終結果: '{best_result[0]}' (信頼度: {best_result[1]:.2f})")
+        logger.info(f"{region_name} 最終結果: '{best_result[0]}' (信頼度: {best_result[1]:.2f}) [Tesseract]")
         return best_result
     
     def detect_score_and_comment_boxes(self, gray: np.ndarray, debug=False) -> Tuple[List[Tuple[int, int, int, int]], List[Tuple[int, int, int, int]]]:
@@ -588,7 +723,8 @@ class ImprovedOCRProcessor:
             "writer_number": number_results["writer_number"],
             "evaluations": number_results["evaluations"],
             "comments": number_results["comments"],
-            "gemini_enabled": self.use_gemini
+            "gemini_enabled": self.use_gemini,
+            "pytorch_enabled": self.use_pytorch
         }
         
         logger.info("改良版処理完了")
@@ -606,6 +742,13 @@ def main():
         print("🚀 Gemini API有効化: 文字認識にGeminiを使用")
     else:
         print("⚠️ Gemini API無効: .envファイルにGEMINI_API_KEYを設定してください")
+    
+    # PyTorchモデル利用可否をチェック
+    pytorch_model_path = "/workspace/data/digit_model.pt"
+    if os.path.exists(pytorch_model_path):
+        print("🧠 PyTorch数字認識モデル有効化: 高精度数字認識を使用")
+    else:
+        print("⚠️ PyTorchモデル無効: digit_model.ptが見つかりません")
     
     processor = ImprovedOCRProcessor(use_gemini=use_gemini)
     
@@ -651,8 +794,9 @@ def main():
             saved_path = Path(comment_data['image_saved'])
             print(f"  {comment_name}: {saved_path} 保存済み")
         
-        print(f"\n改良版処理完了！（動的検出 + Gemini文字認識統合）")
+        print(f"\n改良版処理完了！（動的検出 + Gemini文字認識 + PyTorch数字認識統合）")
         print(f"Gemini API使用: {'✅' if results.get('gemini_enabled') else '❌'}")
+        print(f"PyTorch数字認識使用: {'✅' if results.get('pytorch_enabled') else '❌'}")
         
     except Exception as e:
         logger.error(f"処理エラー: {e}")
