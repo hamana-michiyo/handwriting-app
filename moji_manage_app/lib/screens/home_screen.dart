@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'image_capture_screen.dart';
 import '../models/capture_data.dart';
+import '../services/api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -11,6 +12,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final List<CaptureData> _recentCaptures = [];
+  final ApiService _apiService = ApiService();
 
   void _navigateToImageCapture() async {
     final result = await Navigator.push<CaptureData>(
@@ -28,6 +30,43 @@ class _HomeScreenState extends State<HomeScreen> {
           SnackBar(
             content: Text('画像を取り込みました: ${result.writerNumber}'),
             backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+
+  /// APIヘルスチェック実行
+  Future<void> _checkApiHealth() async {
+    try {
+      final isHealthy = await _apiService.checkHealth();
+      
+      if (mounted) {
+        if (isHealthy) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ APIサーバー接続OK'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ APIサーバー接続NG - サーバーが停止しているか確認してください'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ APIヘルスチェック失敗: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -143,6 +182,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: _buildFunctionButton(
+                icon: Icons.health_and_safety,
+                title: '🔧 APIヘルスチェック',
+                subtitle: 'サーバー接続確認',
+                onTap: _checkApiHealth,
+                color: Colors.orange,
+              ),
             ),
           ],
         ),
