@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 /// 手書き文字評価APIとの通信を担当するサービスクラス
 class ApiService {
   // API基本設定
-  static const String _baseUrl = 'http://localhost:8001';
+  static const String _baseUrl = 'http://192.168.1.68:8001';
   static const Duration _timeout = Duration(seconds: 60);
   
   // エンドポイント

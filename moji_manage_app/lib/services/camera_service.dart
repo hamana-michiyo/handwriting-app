@@ -19,7 +19,7 @@ class CameraService {
 
       _controller = CameraController(
         cameras.first,
-        ResolutionPreset.veryHigh,
+        ResolutionPreset.max,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
@@ -59,7 +59,9 @@ class CameraService {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 100,
+        imageQuality: 98,
+        maxWidth: 6000,
+        maxHeight: 4000,
       );
       
       if (image == null) return null;

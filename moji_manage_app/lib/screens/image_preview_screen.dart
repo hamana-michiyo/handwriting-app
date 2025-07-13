@@ -31,9 +31,9 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     try {
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: widget.imagePath,
-        maxWidth: 6000,
-        maxHeight: 4000,
-        compressQuality: 95,
+        maxWidth: 4000,
+        maxHeight: 3000,
+        compressQuality: 100,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: '📝 記入用紙を切り取る',

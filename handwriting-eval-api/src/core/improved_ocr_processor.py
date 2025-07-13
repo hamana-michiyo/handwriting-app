@@ -91,30 +91,123 @@ class ImprovedOCRProcessor:
             self.use_pytorch = False
     
     def find_page_corners(self, gray: np.ndarray) -> Optional[np.ndarray]:
-        """page_split.pyのページ検出ロジック"""
+        """改良版ページ検出ロジック"""
         try:
-            blur = cv2.GaussianBlur(gray, (5, 5), 0)
-            _, bw = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            # 複数の手法で4隅検出を試行
+            h, w = gray.shape
+            min_area = (h * w) * 0.3  # 最小面積を30%に設定
             
-            # 背景が濃い場合の反転
-            if bw.mean() < 127:
-                bw = cv2.bitwise_not(bw)
+            # 手法1: エッジ検出 + 輪郭抽出
+            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+            kernel = np.ones((3, 3), np.uint8)
+            edges = cv2.dilate(edges, kernel, iterations=1)
             
-            contours, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not contours:
-                return None
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            page = max(contours, key=cv2.contourArea)
-            peri = cv2.arcLength(page, True)
-            approx = cv2.approxPolyDP(page, 0.02 * peri, True)
+            # 面積でソートして上位候補を検討
+            contours = sorted(contours, key=cv2.contourArea, reverse=True)
             
-            if len(approx) != 4:
-                return None
+            for contour in contours[:5]:  # 上位5つを試行
+                area = cv2.contourArea(contour)
+                if area < min_area:
+                    continue
+                    
+                peri = cv2.arcLength(contour, True)
+                # より厳密な近似（0.01に変更）
+                approx = cv2.approxPolyDP(contour, 0.01 * peri, True)
+                
+                if len(approx) == 4:
+                    # 4隅の妥当性チェック
+                    corners = approx.reshape(4, 2).astype(np.float32)
+                    if self._validate_corners(corners, w, h):
+                        return self._order_corners(corners)
             
-            return approx.reshape(4, 2).astype("float32")
+            # 手法2: より緩い近似での再試行
+            for contour in contours[:3]:
+                area = cv2.contourArea(contour)
+                if area < min_area:
+                    continue
+                    
+                peri = cv2.arcLength(contour, True)
+                approx = cv2.approxPolyDP(contour, 0.03 * peri, True)  # より緩い近似
+                
+                if len(approx) >= 4:
+                    # 最も外側の4点を選択
+                    corners = self._select_outer_corners(approx.reshape(-1, 2), w, h)
+                    if self._validate_corners(corners, w, h):
+                        return self._order_corners(corners)
+            
+            return None
+            
         except Exception as e:
             logger.warning(f"ページ検出失敗: {e}")
             return None
+    
+    def _validate_corners(self, corners: np.ndarray, w: int, h: int) -> bool:
+        """4隅の妥当性をチェック"""
+        try:
+            # 最小の四角形面積チェック
+            area = cv2.contourArea(corners)
+            min_area = (w * h) * 0.3
+            if area < min_area:
+                return False
+            
+            # 角度チェック（極端に鋭角・鈍角でないか）
+            for i in range(4):
+                p1 = corners[i]
+                p2 = corners[(i + 1) % 4] 
+                p3 = corners[(i + 2) % 4]
+                
+                v1 = p2 - p1
+                v2 = p3 - p2
+                
+                # ベクトルの内積から角度を計算
+                cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+                angle = np.arccos(np.clip(cos_angle, -1, 1)) * 180 / np.pi
+                
+                # 30度〜150度の範囲でない場合は無効
+                if angle < 30 or angle > 150:
+                    return False
+            
+            return True
+        except:
+            return False
+    
+    def _select_outer_corners(self, points: np.ndarray, w: int, h: int) -> np.ndarray:
+        """複数点から最も外側の4点を選択"""
+        try:
+            # 左上・右上・右下・左下を探す
+            top_left = min(points, key=lambda p: p[0] + p[1])
+            top_right = min(points, key=lambda p: (w - p[0]) + p[1])
+            bottom_right = min(points, key=lambda p: (w - p[0]) + (h - p[1]))
+            bottom_left = min(points, key=lambda p: p[0] + (h - p[1]))
+            
+            return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
+        except:
+            return points[:4].astype(np.float32)
+    
+    def _order_corners(self, corners: np.ndarray) -> np.ndarray:
+        """4隅を時計回り順に並び替え（左上→右上→右下→左下）"""
+        try:
+            # 重心を計算
+            center = corners.mean(axis=0)
+            
+            # 各点と重心の相対位置で分類
+            ordered = np.zeros((4, 2), dtype=np.float32)
+            
+            for corner in corners:
+                if corner[0] < center[0] and corner[1] < center[1]:  # 左上
+                    ordered[0] = corner
+                elif corner[0] > center[0] and corner[1] < center[1]:  # 右上
+                    ordered[1] = corner
+                elif corner[0] > center[0] and corner[1] > center[1]:  # 右下
+                    ordered[2] = corner
+                else:  # 左下
+                    ordered[3] = corner
+            
+            return ordered
+        except:
+            return corners
     
     def order_corners(self, pts: np.ndarray) -> np.ndarray:
         """4点をTL, TR, BR, BL順に並べる"""
@@ -180,19 +273,40 @@ class ImprovedOCRProcessor:
             # 輪郭抽出
             cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            # ほぼ正方形・面積闾値でフィルタ
+            # より厳密な文字セル検出フィルタ
             cand = []
             for c in cnts:
                 area = cv2.contourArea(c)
-                if area < (H * W) * 0.002 or area > (H * W) * 0.03:
+                # より厳しい面積制限（文字セルサイズに合わせる）
+                min_area = (H * W) * 0.005  # 0.002 → 0.005 (より大きな下限)
+                max_area = (H * W) * 0.015  # 0.03 → 0.015 (より小さな上限)
+                
+                if area < min_area or area > max_area:
                     continue
+                
+                # 輪郭の複雑さチェック
                 peri = cv2.arcLength(c, True)
-                approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-                if len(approx) != 4:
+                approx = cv2.approxPolyDP(c, 0.015 * peri, True)  # より厳密な近似
+                
+                # 4角形またはそれに近い形状
+                if len(approx) < 4 or len(approx) > 6:
                     continue
+                
                 x, y, w, h = cv2.boundingRect(approx)
-                if 0.85 < w / h < 1.15:  # 正方形っぽい
-                    cand.append((x, y, w, h))
+                
+                # より厳しい正方形判定
+                aspect_ratio = w / h
+                if not (0.9 < aspect_ratio < 1.1):  # 0.85-1.15 → 0.9-1.1
+                    continue
+                
+                # サイズの妥当性チェック（文字セルとして適切なサイズか）
+                min_size = min(H, W) * 0.08  # 最小サイズ
+                max_size = min(H, W) * 0.25  # 最大サイズ
+                
+                if not (min_size < w < max_size and min_size < h < max_size):
+                    continue
+                
+                cand.append((x, y, w, h))
             
             if len(cand) < 3:
                 raise RuntimeError("課題マスらしき四角が 3 つ見つかりません")
@@ -213,10 +327,32 @@ class ImprovedOCRProcessor:
                 cells.append((x + margin, y + margin, x + w - margin, y + h - margin))
             
             if debug:
+                # 詳細デバッグ画像生成
                 dbg = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-                for (x1,y1,x2,y2) in cells:
-                    cv2.rectangle(dbg, (x1,y1), (x2,y2), (0,255,0), 2)
+                
+                # 全候補を赤で表示
+                for (x, y, w, h) in cand:
+                    cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 0, 255), 1)
+                    cv2.putText(dbg, f"{w}x{h}", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 1)
+                
+                # 選択された文字セルを緑で表示
+                for i, (x1, y1, x2, y2) in enumerate(cells):
+                    cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 3)
+                    cv2.putText(dbg, f"Cell{i+1}", (x1+5, y1+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                
+                # 右列のボックスを青で表示
+                for (x, y, w, h) in right_boxes:
+                    cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 0, 0), 2)
+                
                 cv2.imwrite(str(self.debug_dir / "dbg_cells_contour.jpg"), dbg)
+                
+                # ログ出力
+                print(f"[文字セル検出] 候補数: {len(cand)}, 右列候補: {len(right_boxes)}, 最終選択: {len(cells)}個")
+                for i, (x, y, w, h) in enumerate(cand):
+                    area_ratio = (w * h) / (H * W)
+                    print(f"  候補{i+1}: ({x},{y}) {w}x{h}, 面積比: {area_ratio:.4f}")
+                for i, (x1, y1, x2, y2) in enumerate(cells):
+                    print(f"  セル{i+1}: ({x1},{y1})-({x2},{y2}) サイズ: {x2-x1}x{y2-y1}")
             
             if len(cells) != 3:
                 raise RuntimeError("課題マスを 3 つ取得できません")
@@ -331,7 +467,7 @@ class ImprovedOCRProcessor:
             result = cv2.bitwise_not(opening)
             
             # デバッグ保存
-            if save_debug and debug_name:
+            if save_debug and debug_name and self.debug_dir:
                 debug_file = self.debug_dir / f"guideline_removed_{debug_name}.jpg"
                 cv2.imwrite(str(debug_file), result)
                 logger.info(f"補助線除去結果保存: {debug_file}")
@@ -557,7 +693,7 @@ class ImprovedOCRProcessor:
         score_cand, cmt_cand = [], []
         for c in cnts:
             x, y, w, h = cv2.boundingRect(c)
-            if w < 20 or h < 30:  # 小さすぎるもの除外
+            if w < 30 or h < 30:  # 小さすぎるもの除外
                 continue
             
             ratio = w / h
@@ -753,8 +889,9 @@ def main():
     processor = ImprovedOCRProcessor(use_gemini=use_gemini)
     
     try:
-        results = processor.process_form("docs/記入sample.JPG", debug=True)
-        
+        #results = processor.process_form("docs/記入sample.JPG", debug=True)
+        results = processor.process_form("debug/original_input.jpg", debug=True)
+
         print("\n=== 改良版処理結果（page_split.py統合 + Gemini認識） ===")
         print(f"歪み補正: {'適用' if results['correction_applied'] else '未適用'}")
         

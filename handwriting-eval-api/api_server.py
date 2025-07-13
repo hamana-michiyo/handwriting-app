@@ -287,6 +287,28 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
             
             print(f"[DEBUG] OCR processing completed successfully")
             
+            # debug/result.logに認識結果を出力
+            log_path = os.path.join(debug_dir, "result.log")
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                log_file.write("=== 手書き文字認識結果 ===\n")
+                log_file.write(f"記入者番号: {writer_number}\n")
+                log_file.write(f"処理時間: {time.time() - start_time:.2f}秒\n")
+                log_file.write(f"画像サイズ: {corrected_image.shape[1]}x{corrected_image.shape[0]}\n\n")
+                
+                log_file.write("--- 文字認識結果 ---\n")
+                for char_key, char_result in character_results.items():
+                    log_file.write(f"{char_key}: '{char_result['text']}' (信頼度: {char_result['confidence']:.2f})\n")
+                
+                log_file.write("\n--- 数字認識結果 ---\n")
+                log_file.write(f"記入者番号: {number_results['writer_number']['text']}\n")
+                for i, score in enumerate(number_results['scores']):
+                    log_file.write(f"評価{i+1}: '{score['text']}' (信頼度: {score['confidence']:.2f})\n")
+                
+                log_file.write(f"\n--- OCR詳細結果 ---\n")
+                log_file.write(f"{ocr_results}\n")
+            
+            print(f"[DEBUG] Recognition results saved to: {log_path}")
+            
         except Exception as ocr_error:
             print(f"[DEBUG] OCR processing failed: {ocr_error}, using fallback")
             # フォールバック: プレースホルダーデータ
@@ -300,6 +322,21 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
                 "writer_number": {"text": writer_number, "confidence": 1.0},
                 "scores": [{"text": "0", "confidence": 0.0} for _ in range(12)]
             }
+            
+            # エラー結果もログに出力
+            log_path = os.path.join(debug_dir, "result.log")
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                log_file.write("=== 手書き文字認識結果（エラー） ===\n")
+                log_file.write(f"記入者番号: {writer_number}\n")
+                log_file.write(f"処理時間: {time.time() - start_time:.2f}秒\n")
+                log_file.write(f"画像サイズ: {corrected_image.shape[1]}x{corrected_image.shape[0]}\n")
+                log_file.write(f"エラー: {ocr_error}\n\n")
+                
+                log_file.write("--- フォールバック結果 ---\n")
+                log_file.write("文字認識: 全て失敗\n")
+                log_file.write("数字認識: 全て失敗\n")
+            
+            print(f"[DEBUG] Error results saved to: {log_path}")
         
         processing_time = time.time() - start_time
         
