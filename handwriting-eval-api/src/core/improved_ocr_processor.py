@@ -244,21 +244,31 @@ class ImprovedOCRProcessor:
         return warped
     
     def correct_perspective(self, image: np.ndarray, debug=False) -> np.ndarray:
-        """page_split.pyベースの透視変換"""
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+        """A4画像全体照明補正 + page_split.pyベースの透視変換"""
         
-        # ページ検出を試行
+        # Step 0: A4画像全体に照明ムラ補正を最初に適用
+        lighting_corrected_image = self.apply_lighting_correction(image)
+        logger.info("A4画像全体に照明ムラ補正を適用")
+        
+        # デバッグ用照明補正画像保存
+        if debug:
+            debug_lighting = self.debug_dir / "a4_lighting_corrected.jpg"
+            cv2.imwrite(str(debug_lighting), lighting_corrected_image)
+        
+        gray = cv2.cvtColor(lighting_corrected_image, cv2.COLOR_BGR2GRAY) if len(lighting_corrected_image.shape) == 3 else lighting_corrected_image
+        
+        # ページ検出を試行（照明補正済み画像で実行）
         corners = self.find_page_corners(gray)
         
         if corners is not None:
-            # 透視変換実行
-            warped = self.perspective_correct_advanced(image, corners, debug)
+            # 透視変換実行（照明補正済み画像を使用）
+            warped = self.perspective_correct_advanced(lighting_corrected_image, corners, debug)
             logger.info(f"透視変換適用: {warped.shape}")
             return warped
         else:
-            # 補正スキップ
-            logger.info("ページ検出失敗、補正スキップ")
-            return image.copy()
+            # 補正スキップ（照明補正済み画像を返す）
+            logger.info("ページ検出失敗、照明補正済み画像を使用")
+            return lighting_corrected_image.copy()
     
     def detect_char_cells(self, gray: np.ndarray, debug=False) -> List[Tuple[int, int, int, int]]:
         """page_split.pyの文字セル検出ロジック"""
@@ -444,33 +454,125 @@ class ImprovedOCRProcessor:
         
         return character_results
     
+    def apply_lighting_correction(self, image: np.ndarray) -> np.ndarray:
+        """軽い照明ムラ補正処理"""
+        try:
+            if len(image.shape) == 3:
+                # カラー画像の場合は、各チャンネルに同じ補正を適用
+                channels = cv2.split(image)
+                corrected_channels = []
+                
+                for channel in channels:
+                    # 軽いCLAHE (より控えめなパラメータ)
+                    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
+                    enhanced = clahe.apply(channel)
+                    corrected_channels.append(enhanced)
+                
+                return cv2.merge(corrected_channels)
+            else:
+                # グレースケール画像
+                gray = image.copy()
+                
+                # 軽いCLAHE適用
+                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
+                enhanced = clahe.apply(gray)
+                
+                return enhanced
+            
+        except Exception as e:
+            logger.warning(f"照明補正エラー: {e}")
+            return image
+    
     def remove_guidelines(self, image: np.ndarray, save_debug=False, debug_name="") -> np.ndarray:
-        """補助線除去（元手法ベース）"""
+        """改良補助線除去（文字保護強化 + コントラスト改善）"""
         try:
             # グレースケール変換
-            if len(image.shape) == 3:
+            #if len(image.shape) == 3:
+            #    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            #else:
+            #    gray = image.copy()
+            
+            # Step 1: 軽いコントラスト強化（文字をより明確に）
+            # enhanced = cv2.convertScaleAbs(gray, alpha=1.3, beta=-5)
+            # 画像の中央値に基づく動的なコントラスト調整
+            #median_intensity = np.median(gray)
+            #alpha = 1.2 if median_intensity < 120 else 1.0
+            #beta  = -10 if median_intensity < 120 else -3
+            #enhanced = cv2.convertScaleAbs(gray, alpha=alpha, beta=beta)
+
+            # Step 2: 軽いガウシアンブラー（ノイズ除去）
+            #blur = cv2.GaussianBlur(enhanced, (3, 3), 0)
+
+            # Step 3: 文字保護のための高い閾値設定
+            #_, thresh = cv2.threshold(blur, 130, 255, cv2.THRESH_BINARY_INV)
+            # Step 4: 最小限のモルフォロジー処理（文字を過度に削らない）
+            #kernel = np.ones((2, 2), np.uint8)
+            #opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
+            # Step 5: ほとんど膨張しない（文字の細部保護）
+            #kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
+            #dilated = cv2.dilate(opening, kernel_dilate, iterations=1)
+            # Step 6: 反転して背景白・文字黒
+            #result = cv2.bitwise_not(opening)
+
+            # --- 1. グレースケール & 軽く平滑化 ---
+            if image.ndim == 3:
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
-                gray = image.copy()
-            
-            # ガウシアンブラー
-            blur = cv2.GaussianBlur(gray, (3, 3), 0)
-            
-            # 二値化（固定閾値127）
-            _, thresh = cv2.threshold(blur, 127, 255, cv2.THRESH_BINARY_INV)
-            
-            # モルフォロジー（軽め）
-            kernel = np.ones((2, 2), np.uint8)
-            opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
-            
-            # 反転して背景白・文字黒
-            result = cv2.bitwise_not(opening)
-            
-            # デバッグ保存
+                gray = image.copy() 
+            # 画像の中央値に基づく動的なコントラスト調整
+            median_intensity = np.median(gray)
+            alpha = 1.2 if median_intensity < 120 else 1.0
+            beta  = -10 if median_intensity < 120 else -3
+            enhanced = cv2.convertScaleAbs(gray, alpha=alpha, beta=beta)
+            blur = cv2.GaussianBlur(enhanced, (3, 3), 0)
+
+            # --- 2. 黒帽で「暗く細い線」抽出 -------------------------------
+            H, W = gray.shape
+            k_h  = cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, W//4), 1))
+            k_v  = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(15, H//4)))
+
+            bh_h = cv2.morphologyEx(blur, cv2.MORPH_BLACKHAT, k_h)
+            bh_v = cv2.morphologyEx(blur, cv2.MORPH_BLACKHAT, k_v)
+
+            # --- 3. 二値化（ヒステリシス気味に弱め） ------------------------
+            _, m_h = cv2.threshold(bh_h, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            _, m_v = cv2.threshold(bh_v, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            guide  = cv2.bitwise_or(m_h, m_v)
+            # --- 4. 連結成分で「長いのに細い」ものだけ残す -------------------
+            num, lbl, stats, _ = cv2.connectedComponentsWithStats(guide, 8)
+            slim = np.zeros_like(guide)
+            for i in range(1, num):
+                w, h, area = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT], stats[i, cv2.CC_STAT_AREA]
+            # 幅か高さが画面の70%以上、かつ面積率 < 0.15 → ガイド線
+            if ((w > 0.7*W and h < 0.1*H) or (h > 0.7*H and w < 0.1*W)) and (area/(w*h) < 0.15):
+                slim[lbl == i] = 255
+
+            # --- 5. バイナリ化 → slim を引く -------------------------------
+            _, text = cv2.threshold(blur, 0, 255,
+                                    cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            clean = cv2.bitwise_and(text, cv2.bitwise_not(slim))
+
+            # --- 6. ほんのり膨張→収縮で欠けを埋め戻す -----------------------
+            clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE,
+                                    np.ones((2, 2), np.uint8), 1)
+
+            return cv2.bitwise_not(clean)
+
+            # デバッグ保存（複数ステップ）
             if save_debug and debug_name and self.debug_dir:
                 debug_file = self.debug_dir / f"guideline_removed_{debug_name}.jpg"
+                enhanced_file = self.debug_dir / f"enhanced_{debug_name}.jpg"
+                dbg_thin_file = self.debug_dir / f"dbg_thin_{debug_name}.jpg"
+                dbg_guide_file = self.debug_dir / f"dbg_guide_{debug_name}.jpg"
+                dbg_inpaint_file = self.debug_dir / f"dbg_inpaint_{debug_name}.jpg"
+                
+                cv2.imwrite(str(dbg_thin_file), thin)
+                cv2.imwrite(str(dbg_guide_file), guide)
+                cv2.imwrite(str(dbg_inpaint_file), inpainted)
+
                 cv2.imwrite(str(debug_file), result)
-                logger.info(f"補助線除去結果保存: {debug_file}")
+                #cv2.imwrite(str(enhanced_file), enhanced)
+                logger.info(f"改良補助線除去結果保存: {debug_file}")
             
             return result
             
@@ -480,7 +582,7 @@ class ImprovedOCRProcessor:
             return image
     
     def pytorch_digit_recognition(self, image: np.ndarray, region_name: str) -> Tuple[str, float]:
-        """PyTorchモデルによる数字認識"""
+        """PyTorchモデルによる数字認識（元のシンプル手法）"""
         if not self.use_pytorch:
             return "", 0.0
         
@@ -693,12 +795,12 @@ class ImprovedOCRProcessor:
         score_cand, cmt_cand = [], []
         for c in cnts:
             x, y, w, h = cv2.boundingRect(c)
-            if w < 30 or h < 30:  # 小さすぎるもの除外
+            if w < 20 or h < 30:  # 小さすぎるもの除外
                 continue
             
             ratio = w / h
             area = w * h
-            if area < 600:  # 30×30
+            if area < 600:  #20×30
                 continue
             
             # (x,y) をフル画像座標系に直す
@@ -722,12 +824,24 @@ class ImprovedOCRProcessor:
         
         # 右端列だけ残す
         def keep_rightmost(boxes, tol=25):
+            # tol: 25px 以内のものを右端とみなす
             max_x = max(b[0] for b in boxes)
             return [b for b in boxes if abs(b[0] - max_x) < tol]
         
         score_cand = keep_rightmost(score_cand, 40)  # 40px 以内
         cmt_cand = keep_rightmost(cmt_cand)
         
+        # 点数枠候補の平均の幅を計算
+        if len(score_cand) > 0:
+            #avg_w = sum(b[2] for b in score_cand) / len(score_cand)
+            # 幅が平均の 0.8〜1.2 倍のものだけ残す
+            #score_cand = [b for b in score_cand if 0.8 * avg_w < b[2] < 1.2 * avg_w]
+            widths = np.array([b[2] for b in score_cand])
+            q1, q3   = np.percentile(widths, [25, 75])
+            iqr      = q3 - q1
+            lo, hi   = q1 - 1.5*iqr, q3 + 1.5*iqr      # 外れ値しきい
+            score_cand = [b for b in score_cand if lo < b[2] < hi]
+
         # y 昇順に 12 個ずつそろえる
         score_cand = sorted(score_cand, key=lambda b: b[1])[:12]
         cmt_cand = sorted(cmt_cand, key=lambda b: b[1])[:12]
@@ -842,8 +956,8 @@ class ImprovedOCRProcessor:
         
         logger.info(f"元画像サイズ: {original_image.shape}")
         
-        # 透視変換適用
-        corrected_image = self.correct_perspective(original_image, debug)
+        # 透視変換適用（A4画像全体照明補正を含む）
+        corrected_image = self.correct_perspective(original_image, debug=True)
         cv2.imwrite(str(self.debug_dir / "improved_corrected.jpg"), corrected_image)
         
         # 文字領域抽出（動的検出）
@@ -855,7 +969,7 @@ class ImprovedOCRProcessor:
         # 結果統合
         results = {
             "correction_applied": True,
-            "character_recognition": character_images,  # Gemini認識結果含む
+            "character_results": character_images,  # Gemini認識結果含む
             "writer_number": number_results["writer_number"],
             "evaluations": number_results["evaluations"],
             "comments": number_results["comments"],
@@ -896,7 +1010,7 @@ def main():
         print(f"歪み補正: {'適用' if results['correction_applied'] else '未適用'}")
         
         print("\n[文字画像抽出・認識（動的検出 + Gemini）]")
-        for char_name, char_data in results["character_recognition"].items():
+        for char_name, char_data in results["character_results"].items():
             print(f"  {char_name}: debug/improved_char_{char_name}.jpg 保存済み")
             
             # Gemini認識結果を表示

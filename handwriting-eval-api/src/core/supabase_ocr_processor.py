@@ -79,7 +79,7 @@ class SupabaseOCRProcessor:
         try:
             if ImprovedOCRProcessor:
                 self.ocr_processor = ImprovedOCRProcessor(
-                    use_gemini=False,  # 独自にGemini管理
+                    use_gemini=True,  # Gemini認識を有効化
                     debug_dir=self.debug_dir
                 )
                 logger.info("OCR processor initialized")
@@ -117,6 +117,7 @@ class SupabaseOCRProcessor:
             # OCR処理実行
             if self.ocr_processor:
                 ocr_results = self.ocr_processor.process_form(image_path, debug=self.debug_enabled)
+                logger.info(f"OCR結果のキー: {list(ocr_results.keys())}")
             else:
                 # 簡易フォールバック処理
                 ocr_results = self._fallback_processing(image)
@@ -134,15 +135,18 @@ class SupabaseOCRProcessor:
             }
             
             # 文字認識結果処理
-            if "character_recognition" in ocr_results:
+            if "character_results" in ocr_results:
+                # 評価点数データを収集
+                evaluation_scores = self._collect_evaluation_scores(ocr_results)
+                
                 char_results = self._process_character_results(
-                    ocr_results["character_recognition"], 
-                    writer_number, writer_age, writer_grade, auto_save
+                    ocr_results["character_results"], 
+                    writer_number, writer_age, writer_grade, auto_save, evaluation_scores
                 )
                 results["character_results"] = char_results
             
             # 数字認識結果処理
-            if "writer_number" in ocr_results or "evaluations" in ocr_results:
+            if "writer_number" in ocr_results or "number_results" in ocr_results:
                 number_results = self._process_number_results(ocr_results)
                 results["number_results"] = number_results
             
@@ -163,9 +167,56 @@ class SupabaseOCRProcessor:
                 "supabase_saved": False
             }
     
+    def _collect_evaluation_scores(self, ocr_results: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
+        """評価点数を文字ごとに分割して収集"""
+        evaluation_scores = {"char_1": {}, "char_2": {}, "char_3": {}}
+        logger.info(f"評価スコア収集開始")
+        
+        # evaluationsキーからスコアデータを取得（improved_ocr_processor.pyのprocess_formメソッド用）
+        if "evaluations" in ocr_results:
+            logger.info(f"evaluations found: {len(ocr_results['evaluations'])} items")
+            for field_name, result in ocr_results["evaluations"].items():
+                logger.info(f"評価項目発見: {field_name} = {result.get('text', '')}")
+                
+                # recognized_text または text キーから値を取得
+                score_text = result.get('text', result.get('recognized_text', ''))
+                
+                # 評価名から文字番号と評価項目を抽出
+                if "評価1" in field_name:
+                    char_key = "char_1"
+                elif "評価2" in field_name:
+                    char_key = "char_2"
+                elif "評価3" in field_name:
+                    char_key = "char_3"
+                else:
+                    continue
+                
+                # 評価項目を抽出
+                if "白" in field_name:
+                    score_type = "white"
+                elif "黒" in field_name:
+                    score_type = "black"
+                elif "場" in field_name:
+                    score_type = "center"
+                elif "形" in field_name:
+                    score_type = "shape"
+                else:
+                    continue
+                
+                # 数字として評価点数を保存
+                try:
+                    score_value = int(score_text)
+                    evaluation_scores[char_key][score_type] = score_value
+                    logger.info(f"評価点数マッピング: {char_key}.{score_type} = {score_value}")
+                except (ValueError, TypeError):
+                    logger.warning(f"評価点数変換失敗: {field_name} = {score_text}")
+        
+        logger.info(f"評価スコア収集結果: {evaluation_scores}")
+        return evaluation_scores
+    
     def _process_character_results(self, char_recognition: Dict[str, Any], 
                                  writer_number: str, writer_age: int, writer_grade: str,
-                                 auto_save: bool) -> List[Dict[str, Any]]:
+                                 auto_save: bool, evaluation_scores: Dict[str, Dict[str, int]] = None) -> List[Dict[str, Any]]:
         """
         文字認識結果処理
         
@@ -183,24 +234,31 @@ class SupabaseOCRProcessor:
         
         for char_key, char_data in char_recognition.items():
             try:
-                # 画像データ準備
-                if "image" in char_data:
-                    image_array = char_data["image"]
-                    # numpy配列をJPEGバイト配列に変換
-                    _, buffer = cv2.imencode('.jpg', image_array)
-                    image_bytes = buffer.tobytes()
-                else:
-                    logger.warning(f"No image data for {char_key}")
+                # Gemini認識結果を取得（既に処理済み）
+                gemini_result = char_data.get("gemini_recognition")
+                if not gemini_result:
+                    logger.warning(f"No Gemini result for {char_key}")
                     continue
                 
-                # Gemini認識実行
-                gemini_result = None
-                if self.use_gemini and image_array is not None:
-                    try:
-                        gemini_result = self.gemini_client.recognize_japanese_character(image_array)
-                        logger.info(f"Gemini recognition for {char_key}: {gemini_result.get('character', 'Unknown')}")
-                    except Exception as e:
-                        logger.warning(f"Gemini recognition failed for {char_key}: {e}")
+                # 補助線除去済み画像データを準備（ストレージ保存用）
+                # 現在は元画像を使用
+                image_bytes = None
+                image_array = None
+                try:
+                    # デバッグディレクトリから補助線除去済み画像を読み込み
+                    cleaned_image_path = f"/workspace/debug/improved_char_{char_key}.jpg"
+                    if os.path.exists(cleaned_image_path):
+                        with open(cleaned_image_path, 'rb') as f:
+                            image_bytes = f.read()
+                        # 画像配列も読み込み（shape情報取得用）
+                        image_array = cv2.imread(cleaned_image_path)
+                        logger.info(f"補助線除去済み画像を使用: {cleaned_image_path}")
+                    else:
+                        logger.warning(f"補助線除去済み画像が見つかりません: {cleaned_image_path}")
+                        continue
+                except Exception as e:
+                    logger.error(f"補助線除去済み画像読み込みエラー: {e}")
+                    continue
                 
                 # 結果構築
                 result = {
@@ -217,16 +275,24 @@ class SupabaseOCRProcessor:
                         # 認識された文字を使用
                         recognized_char = gemini_result.get('character', f'unknown_{char_key}')
                         
-                        # データベース保存（重複チェック有効）
+                        # この文字の評価点数を取得
+                        char_scores = evaluation_scores.get(char_key, {}) if evaluation_scores else {}
+                        
+                        # データベース保存（評価点数付き、重複チェック有効）
                         sample_data = self.supabase.create_writing_sample(
                             writer_number=writer_number,
                             character=recognized_char,
                             image_data=image_bytes,
+                            scores=char_scores if char_scores else None,
                             gemini_result=gemini_result,
                             writer_age=writer_age,
                             writer_grade=writer_grade,
                             allow_duplicates=False  # 重複防止
                         )
+                        
+                        # 評価点数をログ出力
+                        if char_scores:
+                            logger.info(f"評価点数保存: {char_key} = {char_scores}")
                         
                         result["sample_id"] = sample_data["id"]
                         result["image_path"] = sample_data.get("image_path")
@@ -235,6 +301,19 @@ class SupabaseOCRProcessor:
                         result["action"] = sample_data.get("action", "created")
                         
                         if sample_data.get("is_duplicate"):
+                            # 既存サンプルに評価点数を更新
+                            if char_scores:
+                                try:
+                                    update_result = self.supabase.update_writing_sample_scores(
+                                        sample_data['id'], 
+                                        char_scores, 
+                                        {},  # コメントは空
+                                        "system"  # 評価者
+                                    )
+                                    logger.info(f"既存サンプルに評価点数を更新: {recognized_char} (ID: {sample_data['id']}) = {char_scores}")
+                                    result["action"] = "score_updated"
+                                except Exception as e:
+                                    logger.error(f"評価点数更新エラー: {e}")
                             logger.info(f"Character already exists: {recognized_char} (ID: {sample_data['id']}) - SKIPPED")
                         else:
                             logger.info(f"Character saved to Supabase: {recognized_char} (ID: {sample_data['id']}) - CREATED")
@@ -401,7 +480,7 @@ def main():
     )
     
     # テスト画像処理
-    test_image = "docs/記入sample.JPG"
+    test_image = "debug/original_input.jpg"
     if os.path.exists(test_image):
         results = processor.process_form_image(
             image_path=test_image,

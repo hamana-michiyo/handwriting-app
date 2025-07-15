@@ -197,7 +197,7 @@ def apply_perspective_transform(image: np.ndarray, corners: np.ndarray, target_w
     return transformed
 
 
-def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writer_age: Optional[int] = None, writer_grade: Optional[str] = None) -> Dict[str, Any]:
+def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writer_age: Optional[int] = None, writer_grade: Optional[str] = None, auto_save: bool = True) -> Dict[str, Any]:
     """
     切り取り済み画像にOpenCV処理を適用
     1. 四隅検出
@@ -249,7 +249,7 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
                 writer_number=writer_number,
                 writer_age=writer_age,
                 writer_grade=writer_grade,
-                auto_save=False  # API経由では自動保存を無効化
+                auto_save=auto_save  # auto_saveパラメータを使用
             )
             
             # 一時ファイル削除
@@ -259,10 +259,11 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
             character_results = {}
             number_results = {}
             
-            if "character_recognition" in ocr_results:
-                for char_key, char_data in ocr_results["character_recognition"].items():
-                    if "gemini_recognition" in char_data:
-                        gemini_result = char_data["gemini_recognition"]
+            if "character_results" in ocr_results:
+                for char_data in ocr_results["character_results"]:
+                    char_key = char_data.get("char_key", "")
+                    if "gemini_result" in char_data:
+                        gemini_result = char_data["gemini_result"]
                         character_results[char_key] = {
                             "text": gemini_result.get("character", "認識失敗"),
                             "confidence": gemini_result.get("confidence", 0.0)
@@ -270,22 +271,51 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
                     else:
                         character_results[char_key] = {"text": "認識未実装", "confidence": 0.0}
             
-            if "evaluations" in ocr_results:
-                number_results["writer_number"] = {"text": writer_number, "confidence": 1.0}
-                scores = []
-                for i in range(12):
-                    eval_key = f"評価{i+1}" if i < 9 else f"評価{i+1}"
-                    if eval_key in ocr_results["evaluations"]:
-                        eval_data = ocr_results["evaluations"][eval_key]
-                        scores.append({
-                            "text": eval_data.get("recognized_text", "0"),
-                            "confidence": eval_data.get("confidence", 0.0)
-                        })
+            # 記入者番号は入力フォームから取得したものを使用
+            number_results["writer_number"] = {"text": writer_number, "confidence": 1.0}
+            
+            # 評価点数の処理
+            scores = []
+            if "number_results" in ocr_results:
+                eval_names = ["白評価1", "黒評価1", "場評価1", "形評価1",
+                             "白評価2", "黒評価2", "場評価2", "形評価2",
+                             "白評価3", "黒評価3", "場評価3", "形評価3"]
+                
+                # number_resultsから評価データを抽出
+                eval_data_dict = {}
+                for result in ocr_results["number_results"]:
+                    if result.get("type") == "evaluation":
+                        field_name = result.get("field", "")
+                        eval_data_dict[field_name] = {
+                            "text": result.get("recognized_text", "0"),
+                            "confidence": result.get("confidence", 0.0)
+                        }
+                
+                # 決められた順序で評価データを配列に格納
+                for eval_name in eval_names:
+                    if eval_name in eval_data_dict:
+                        scores.append(eval_data_dict[eval_name])
                     else:
                         scores.append({"text": "0", "confidence": 0.0})
-                number_results["scores"] = scores
+            else:
+                scores = [{"text": "0", "confidence": 0.0} for _ in range(12)]
+            
+            number_results["scores"] = scores
             
             print(f"[DEBUG] OCR processing completed successfully")
+            print(f"[DEBUG] Supabase保存設定: auto_save={auto_save}")
+            print(f"[DEBUG] Supabase保存結果: {ocr_results.get('supabase_saved', 'unknown')}")
+            print(f"[DEBUG] OCR結果の keys: {list(ocr_results.keys())}")
+            if 'character_results' in ocr_results:
+                print(f"[DEBUG] character_results数: {len(ocr_results['character_results'])}")
+                for i, char_data in enumerate(ocr_results['character_results']):
+                    print(f"[DEBUG] character_results[{i}]: {char_data.get('char_key', 'unknown')}")
+            
+            # Supabase保存状況をログに追加
+            if 'character_results' in ocr_results:
+                for char_data in ocr_results['character_results']:
+                    saved_status = char_data.get('saved_to_supabase', False)
+                    print(f"[DEBUG] {char_data.get('char_key', '')}: Supabase保存={saved_status}")
             
             # debug/result.logに認識結果を出力
             log_path = os.path.join(debug_dir, "result.log")
@@ -301,8 +331,16 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
                 
                 log_file.write("\n--- 数字認識結果 ---\n")
                 log_file.write(f"記入者番号: {number_results['writer_number']['text']}\n")
+                
+                eval_names = ["白評価1", "黒評価1", "場評価1", "形評価1",
+                             "白評価2", "黒評価2", "場評価2", "形評価2",
+                             "白評価3", "黒評価3", "場評価3", "形評価3"]
+                
                 for i, score in enumerate(number_results['scores']):
-                    log_file.write(f"評価{i+1}: '{score['text']}' (信頼度: {score['confidence']:.2f})\n")
+                    if i < len(eval_names):
+                        log_file.write(f"{eval_names[i]}: '{score['text']}' (信頼度: {score['confidence']:.2f})\n")
+                    else:
+                        log_file.write(f"評価{i+1}: '{score['text']}' (信頼度: {score['confidence']:.2f})\n")
                 
                 log_file.write(f"\n--- OCR詳細結果 ---\n")
                 log_file.write(f"{ocr_results}\n")
@@ -348,7 +386,12 @@ def process_cropped_form_with_opencv(image: np.ndarray, writer_number: str, writ
             "perspective_corrected": True,
             "processing_time": processing_time,
             "corners_detected": corners.tolist(),
-            "corrected_size": {"width": corrected_image.shape[1], "height": corrected_image.shape[0]}
+            "corrected_size": {"width": corrected_image.shape[1], "height": corrected_image.shape[0]},
+            "supabase_settings": {
+                "auto_save_enabled": auto_save,
+                "database_saved": ocr_results.get('supabase_saved', False),
+                "character_save_count": len([c for c in ocr_results.get('character_results', []) if c.get('saved_to_supabase', False)])
+            }
         }
         
     except Exception as e:
@@ -431,7 +474,8 @@ async def process_cropped_form(request: FormProcessRequest):
             image=image,
             writer_number=request.writer_number,
             writer_age=request.writer_age,
-            writer_grade=request.writer_grade
+            writer_grade=request.writer_grade,
+            auto_save=request.auto_save
         )
         
         return FormProcessResponse(**result)
