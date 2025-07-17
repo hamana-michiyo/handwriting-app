@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'image_capture_screen.dart';
+import 'sample_list_screen.dart';
 import '../models/capture_data.dart';
 import '../services/api_service.dart';
 
@@ -174,8 +175,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: '📋 一覧管理',
                     subtitle: '・評価',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('一覧管理機能は準備中です')),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SampleListScreen(),
+                        ),
                       );
                     },
                     color: Colors.green,
