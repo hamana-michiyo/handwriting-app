@@ -67,13 +67,15 @@ class SupabaseOCRProcessor:
             if GeminiCharacterRecognizer:
                 self.gemini_client = GeminiCharacterRecognizer()
                 self.use_gemini = True
-                logger.info("Gemini client initialized")
+                logger.info("Gemini client initialized successfully")
             else:
                 self.use_gemini = False
-                logger.warning("Gemini client not available")
+                logger.error("GeminiCharacterRecognizer class not available - check imports")
         except Exception as e:
             self.use_gemini = False
-            logger.warning(f"Gemini initialization failed: {e}")
+            logger.error(f"Gemini initialization failed: {e}")
+            import traceback
+            logger.error(f"Gemini initialization traceback: {traceback.format_exc()}")
         
         # 既存OCRプロセッサ初期化
         try:
@@ -82,13 +84,15 @@ class SupabaseOCRProcessor:
                     use_gemini=True,  # Gemini認識を有効化
                     debug_dir=self.debug_dir
                 )
-                logger.info("OCR processor initialized")
+                logger.info("OCR processor initialized successfully")
             else:
                 self.ocr_processor = None
-                logger.warning("OCR processor not available")
+                logger.error("ImprovedOCRProcessor class not available - check imports")
         except Exception as e:
             self.ocr_processor = None
-            logger.warning(f"OCR processor initialization failed: {e}")
+            logger.error(f"OCR processor initialization failed: {e}")
+            import traceback
+            logger.error(f"OCR processor traceback: {traceback.format_exc()}")
     
     def process_form_image(self, image_path: str, writer_number: str, 
                           writer_age: int = None, writer_grade: str = None,
@@ -378,7 +382,8 @@ class SupabaseOCRProcessor:
         Returns:
             簡易処理結果
         """
-        logger.warning("Using fallback processing")
+        logger.error("Using fallback processing - main OCR processor failed to initialize")
+        logger.error("This means character recognition will not work properly")
         
         # 簡易的な文字領域検出
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
