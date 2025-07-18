@@ -112,6 +112,8 @@ async def startup_event():
     global supabase_processor
     
     try:
+        logger.info("Starting Supabase OCR Processor initialization...")
+        
         # Supabase OCRプロセッサ初期化
         supabase_processor = SupabaseOCRProcessor(
             supabase_url=os.getenv('SUPABASE_URL'),
@@ -122,12 +124,21 @@ async def startup_event():
         
         logger.info("Supabase OCR Processor initialized successfully")
         
+        # OCRプロセッサの状態を確認
+        if hasattr(supabase_processor, 'ocr_processor'):
+            if supabase_processor.ocr_processor is None:
+                logger.error("OCR processor is None after initialization - this will cause fallback processing")
+            else:
+                logger.info("OCR processor initialized successfully")
+        
         # データベース接続テスト
         stats = supabase_processor.get_database_stats()
         logger.info(f"Database connection verified. Stats: {stats}")
         
     except Exception as e:
         logger.error(f"Failed to initialize Supabase OCR Processor: {e}")
+        import traceback
+        logger.error(f"Initialization traceback: {traceback.format_exc()}")
         raise
 
 @app.get("/health", summary="ヘルスチェック")

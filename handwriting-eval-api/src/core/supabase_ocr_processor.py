@@ -23,11 +23,20 @@ from database.supabase_client import SupabaseClient
 # 既存モジュールインポート
 try:
     from core.gemini_client import GeminiCharacterRecognizer
-    from core.improved_ocr_processor import ImprovedOCRProcessor
+    logging.info("GeminiCharacterRecognizer imported successfully")
 except ImportError as e:
-    logging.warning(f"Import warning: {e}")
-    # フォールバック
+    logging.error(f"Failed to import GeminiCharacterRecognizer: {e}")
+    import traceback
+    logging.error(f"GeminiCharacterRecognizer import traceback: {traceback.format_exc()}")
     GeminiCharacterRecognizer = None
+
+try:
+    from core.improved_ocr_processor import ImprovedOCRProcessor
+    logging.info("ImprovedOCRProcessor imported successfully")
+except ImportError as e:
+    logging.error(f"Failed to import ImprovedOCRProcessor: {e}")
+    import traceback
+    logging.error(f"ImprovedOCRProcessor import traceback: {traceback.format_exc()}")
     ImprovedOCRProcessor = None
 
 # ログ設定
