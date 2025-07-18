@@ -417,7 +417,7 @@ class SupabaseOCRProcessor:
         sample_chars = ["清", "炎", "葉"]
         
         return {
-            "character_recognition": {
+            "character_results": {
                 f"char_{i+1}": {
                     "image": char_regions[i]["image"],
                     "bbox": char_regions[i]["bbox"],
@@ -441,6 +441,9 @@ class SupabaseOCRProcessor:
                 {"field": "黒評価3", "recognized_text": "9", "confidence": 0.5, "type": "evaluation"},
                 {"field": "場評価3", "recognized_text": "7", "confidence": 0.5, "type": "evaluation"},
                 {"field": "形評価3", "recognized_text": "8", "confidence": 0.5, "type": "evaluation"}
+            ],
+            "number_results": [
+                {"field": "writer_number", "recognized_text": "9998", "confidence": 0.5, "type": "number"}
             ],
             "correction_applied": False,
             "fallback_processing": True
