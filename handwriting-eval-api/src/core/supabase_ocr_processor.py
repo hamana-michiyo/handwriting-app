@@ -189,41 +189,81 @@ class SupabaseOCRProcessor:
         # evaluationsキーからスコアデータを取得（improved_ocr_processor.pyのprocess_formメソッド用）
         if "evaluations" in ocr_results:
             logger.info(f"evaluations found: {len(ocr_results['evaluations'])} items")
-            for field_name, result in ocr_results["evaluations"].items():
-                logger.info(f"評価項目発見: {field_name} = {result.get('text', '')}")
-                
-                # recognized_text または text キーから値を取得
-                score_text = result.get('text', result.get('recognized_text', ''))
-                
-                # 評価名から文字番号と評価項目を抽出
-                if "評価1" in field_name:
-                    char_key = "char_1"
-                elif "評価2" in field_name:
-                    char_key = "char_2"
-                elif "評価3" in field_name:
-                    char_key = "char_3"
-                else:
-                    continue
-                
-                # 評価項目を抽出
-                if "白" in field_name:
-                    score_type = "white"
-                elif "黒" in field_name:
-                    score_type = "black"
-                elif "場" in field_name:
-                    score_type = "center"
-                elif "形" in field_name:
-                    score_type = "shape"
-                else:
-                    continue
-                
-                # 数字として評価点数を保存
-                try:
-                    score_value = int(score_text)
-                    evaluation_scores[char_key][score_type] = score_value
-                    logger.info(f"評価点数マッピング: {char_key}.{score_type} = {score_value}")
-                except (ValueError, TypeError):
-                    logger.warning(f"評価点数変換失敗: {field_name} = {score_text}")
+            
+            # リスト形式の場合（フォールバック処理）
+            if isinstance(ocr_results["evaluations"], list):
+                for evaluation in ocr_results["evaluations"]:
+                    field_name = evaluation.get("field", "")
+                    score_text = evaluation.get("recognized_text", evaluation.get("text", ""))
+                    logger.info(f"評価項目発見: {field_name} = {score_text}")
+                    
+                    # 評価名から文字番号と評価項目を抽出
+                    if "評価1" in field_name:
+                        char_key = "char_1"
+                    elif "評価2" in field_name:
+                        char_key = "char_2"
+                    elif "評価3" in field_name:
+                        char_key = "char_3"
+                    else:
+                        continue
+                    
+                    # 評価項目を抽出
+                    if "白" in field_name:
+                        score_type = "white"
+                    elif "黒" in field_name:
+                        score_type = "black"
+                    elif "場" in field_name:
+                        score_type = "center"
+                    elif "形" in field_name:
+                        score_type = "shape"
+                    else:
+                        continue
+                    
+                    # 数字として評価点数を保存
+                    try:
+                        score_value = int(score_text)
+                        evaluation_scores[char_key][score_type] = score_value
+                        logger.info(f"評価点数マッピング: {char_key}.{score_type} = {score_value}")
+                    except (ValueError, TypeError):
+                        logger.warning(f"評価点数変換失敗: {field_name} = {score_text}")
+                        
+            # 辞書形式の場合（通常処理）
+            else:
+                for field_name, result in ocr_results["evaluations"].items():
+                    logger.info(f"評価項目発見: {field_name} = {result.get('text', '')}")
+                    
+                    # recognized_text または text キーから値を取得
+                    score_text = result.get('text', result.get('recognized_text', ''))
+                    
+                    # 評価名から文字番号と評価項目を抽出
+                    if "評価1" in field_name:
+                        char_key = "char_1"
+                    elif "評価2" in field_name:
+                        char_key = "char_2"
+                    elif "評価3" in field_name:
+                        char_key = "char_3"
+                    else:
+                        continue
+                    
+                    # 評価項目を抽出
+                    if "白" in field_name:
+                        score_type = "white"
+                    elif "黒" in field_name:
+                        score_type = "black"
+                    elif "場" in field_name:
+                        score_type = "center"
+                    elif "形" in field_name:
+                        score_type = "shape"
+                    else:
+                        continue
+                    
+                    # 数字として評価点数を保存
+                    try:
+                        score_value = int(score_text)
+                        evaluation_scores[char_key][score_type] = score_value
+                        logger.info(f"評価点数マッピング: {char_key}.{score_type} = {score_value}")
+                    except (ValueError, TypeError):
+                        logger.warning(f"評価点数変換失敗: {field_name} = {score_text}")
         
         logger.info(f"評価スコア収集結果: {evaluation_scores}")
         return evaluation_scores
