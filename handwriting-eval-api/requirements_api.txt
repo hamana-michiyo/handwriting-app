@@ -32,6 +32,11 @@ google-generativeai>=0.8.3
 pytesseract>=0.3.10
 
 # 機械学習・科学計算
+# PyTorch (CPU版) - 数字認識用
+torch>=2.0.0
+torchvision>=0.15.0
+
+# 従来ライブラリ
 scikit-image>=0.22.0
 scipy>=1.11.0
 

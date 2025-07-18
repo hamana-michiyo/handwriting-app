@@ -7,8 +7,8 @@
 services:
   - type: web
     name: bimoji-api
-    runtime: python3
-    buildCommand: pip install -r requirements_api.txt
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
     startCommand: uvicorn supabase_api_server:app --host 0.0.0.0 --port $PORT
     plan: starter
     
@@ -16,26 +16,64 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      
+      # Supabase Configuration
       - key: SUPABASE_URL
         sync: false  # Set in Render dashboard
       - key: SUPABASE_KEY
         sync: false  # Set in Render dashboard (service_role key)
       - key: SUPABASE_BUCKET
         value: ml-data
+      
+      # Gemini API Configuration
       - key: GEMINI_API_KEY
         sync: false  # Set in Render dashboard
       - key: GEMINI_MODEL
-        value: gemini-1.5-flash
+        value: gemini-2.5-flash
       - key: GEMINI_TIMEOUT
         value: 30
+      
+      # Debug Configuration
       - key: DEBUG_ENABLED
         value: false
+      - key: DEBUG_DIR
+        value: debug
       - key: LOG_LEVEL
         value: INFO
+      
+      # OCR Configuration
+      - key: TESSERACT_CMD
+        value: /usr/bin/tesseract
+      - key: TESSERACT_CONFIG
+        value: --oem 3 --psm 10
+      
+      # Image Processing
       - key: MAX_IMAGE_SIZE
         value: 2048
       - key: IMAGE_QUALITY
         value: 95
+      - key: SUPPORTED_FORMATS
+        value: jpg,jpeg,png
+      
+      # Evaluation Settings
+      - key: SCORE_WEIGHTS_WHITE
+        value: 0.3
+      - key: SCORE_WEIGHTS_BLACK
+        value: 0.2
+      - key: SCORE_WEIGHTS_CENTER
+        value: 0.2
+      - key: SCORE_WEIGHTS_SHAPE
+        value: 0.3
+      
+      # Development Settings
+      - key: DEV_MODE
+        value: false
+      - key: AUTO_SAVE_ENABLED
+        value: true
+      - key: BATCH_SIZE
+        value: 10
+      
+      # Production Settings
       - key: CORS_ORIGINS
         value: "*"  # Production では適切なオリジンを設定
     
@@ -46,7 +84,7 @@ services:
     autoDeploy: true
     
     # Region (選択可能: oregon, ohio, singapore, frankfurt)
-    region: oregon
+    region: singapore
     
     # Scaling (Starter plan limits)
     scaling:
