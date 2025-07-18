@@ -158,6 +158,7 @@ async def root():
         "version": "0.6.0",
         "description": "Gemini AI + Supabase統合による手書き文字認識・評価システム",
         "endpoints": {
+            "POST /process-cropped-form": "切り取り済み記入用紙処理（api_server.py互換）",
             "POST /process-form": "記入用紙画像処理",
             "POST /process-form/upload": "記入用紙ファイルアップロード処理", 
             "GET /samples/{writer_number}": "記入者別サンプル取得",
@@ -179,6 +180,78 @@ async def root():
 # ===========================
 # メイン処理エンドポイント
 # ===========================
+
+@app.post("/process-cropped-form", response_model=ProcessFormResponse, summary="切り取り済み記入用紙処理（Base64）")
+async def process_cropped_form_base64(request: ProcessFormRequest):
+    """
+    切り取り済み記入用紙画像を処理（api_server.py互換エンドポイント）
+    
+    - **image_base64**: Base64エンコードされた画像データ
+    - **writer_number**: 記入者番号（例: "writer_001"）
+    - **writer_age**: 記入者年齢（オプション）
+    - **writer_grade**: 記入者学年（オプション）
+    - **auto_save**: 自動保存フラグ（デフォルト: true）
+    
+    Returns:
+        処理結果（文字認識結果、数字認識結果、統計情報）
+    """
+    if supabase_processor is None:
+        raise HTTPException(status_code=503, detail="Supabase processor not initialized")
+    
+    try:
+        # Base64画像デコード
+        try:
+            # data:image/jpeg;base64,プレフィックスを除去
+            if "," in request.image_base64:
+                image_data = base64.b64decode(request.image_base64.split(",")[1])
+            else:
+                image_data = base64.b64decode(request.image_base64)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {str(e)}")
+        
+        # 一時ファイル作成
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp_file:
+            temp_file.write(image_data)
+            temp_path = temp_file.name
+        
+        try:
+            # OCR処理実行
+            results = supabase_processor.process_form_image(
+                image_path=temp_path,
+                writer_number=request.writer_number,
+                writer_age=request.writer_age,
+                writer_grade=request.writer_grade,
+                auto_save=request.auto_save
+            )
+            
+            # エラーチェック
+            if "error" in results:
+                raise HTTPException(status_code=500, detail=f"Processing failed: {results['error']}")
+            
+            # レスポンス構築
+            response = ProcessFormResponse(
+                success=True,
+                message=f"Form processed successfully. {len(results.get('character_results', []))} characters recognized.",
+                character_results=results.get('character_results', []),
+                number_results=results.get('number_results', []),
+                writer_number=request.writer_number,
+                processing_timestamp=results.get('processing_timestamp', datetime.now().isoformat()),
+                database_stats=results.get('database_stats')
+            )
+            
+            logger.info(f"Cropped form processing completed for writer: {request.writer_number}")
+            return response
+            
+        finally:
+            # 一時ファイル削除
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing cropped form: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/process-form", response_model=ProcessFormResponse, summary="記入用紙処理（Base64）")
 async def process_form_base64(request: ProcessFormRequest):
