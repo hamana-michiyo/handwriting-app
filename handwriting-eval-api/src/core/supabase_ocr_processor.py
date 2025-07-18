@@ -411,14 +411,26 @@ class SupabaseOCRProcessor:
         
         # 評価数字
         if "evaluations" in ocr_results:
-            for eval_key, eval_data in ocr_results["evaluations"].items():
-                number_results.append({
-                    "type": "evaluation",
-                    "field": eval_key,
-                    "recognized_text": eval_data.get("text"),
-                    "confidence": eval_data.get("confidence"),
-                    "method": eval_data.get("method")
-                })
+            # リスト形式の場合（フォールバック処理）
+            if isinstance(ocr_results["evaluations"], list):
+                for eval_data in ocr_results["evaluations"]:
+                    number_results.append({
+                        "type": "evaluation",
+                        "field": eval_data.get("field"),
+                        "recognized_text": eval_data.get("recognized_text"),
+                        "confidence": eval_data.get("confidence"),
+                        "method": eval_data.get("method")
+                    })
+            # 辞書形式の場合（通常処理）
+            else:
+                for eval_key, eval_data in ocr_results["evaluations"].items():
+                    number_results.append({
+                        "type": "evaluation",
+                        "field": eval_key,
+                        "recognized_text": eval_data.get("text"),
+                        "confidence": eval_data.get("confidence"),
+                        "method": eval_data.get("method")
+                    })
         
         return number_results
     
