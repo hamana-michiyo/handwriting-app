@@ -4,6 +4,48 @@
 
 ## 🎉 最新実装完了（2025-07-18）
 
+### ✅ Renderプロダクションデプロイ完了（v0.8.5） - 本番環境稼働開始
+
+**v0.8.5 Renderプロダクションデプロイ**:
+- 🚀 **Render本番環境**: https://handwriting-app-qqp3.onrender.com/ でAPI稼働開始
+- 🐳 **Docker統合**: Dockerfile.api による完全なシステム依存関係管理
+- 🔧 **PyTorch追加**: requirements_api.txt にtorch>=2.0.0, torchvision>=0.15.0 追加完了
+- 📂 **WORKDIR統一**: 開発環境(/workspace)と本番環境のパス完全統一
+- 🌐 **環境変数完全対応**: .env の全設定をrender.yaml に統合（機密情報は手動設定）
+- 📱 **Flutter環境切り替え**: 開発環境⇔本番環境の自動切り替え機能実装
+
+**v0.8.5 技術的成果**:
+- ✅ **API稼働確認**: /health エンドポイントで正常動作確認済み
+- ✅ **データベース接続**: Supabase統合完全動作
+- ✅ **依存関係解決**: tesseract-ocr + PyTorch + 全ライブラリ正常インストール
+- ✅ **Flutter統合**: kDebugMode による開発/本番環境自動判定
+- ✅ **セキュリティ**: 機密情報(API keys)の安全な環境変数管理
+- ✅ **自動デプロイ**: Git push による自動デプロイ機能
+
+**v0.8.5 デプロイ設定**:
+```yaml
+services:
+  - type: web
+    name: bimoji-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    region: singapore
+    plan: starter
+```
+
+**v0.8.5 Flutter環境切り替え**:
+```dart
+static String get _baseUrl {
+  if (kDebugMode) {
+    // 開発環境: ローカルサーバー
+    return _developmentUrl;
+  } else {
+    // 本番環境: Render API
+    return _productionUrl;
+  }
+}
+```
+
 ### ✅ サンプル詳細画面UI大幅改良完了（v0.8.4） - 連続評価作業最適化
 
 **v0.8.4 サンプル詳細画面UI大幅改良**:

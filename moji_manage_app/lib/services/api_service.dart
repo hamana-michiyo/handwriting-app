@@ -5,8 +5,22 @@ import 'package:flutter/foundation.dart';
 
 /// 手書き文字評価APIとの通信を担当するサービスクラス
 class ApiService {
-  // API基本設定
-  static const String _baseUrl = 'http://192.168.1.68:8001';
+  // API基本設定 - 環境別URL
+  static const String _developmentUrl = 'http://192.168.1.68:8001';
+  static const String _productionUrl = 'https://handwriting-app-qqp3.onrender.com';
+  
+  // 現在の環境に応じたベースURL
+  static String get _baseUrl {
+    if (kDebugMode) {
+      // デバッグモード（開発環境）
+      // return _developmentUrl;
+      return _productionUrl; // 本番環境に切り替え
+    } else {
+      // リリースモード（本番環境）
+      return _productionUrl;
+    }
+  }
+  
   static const Duration _timeout = Duration(seconds: 60);
   
   // エンドポイント
