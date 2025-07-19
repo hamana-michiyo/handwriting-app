@@ -114,6 +114,14 @@ async def startup_event():
     try:
         logger.info("Starting Supabase OCR Processor initialization...")
         
+        # 環境変数の確認
+        logger.info("=== ENVIRONMENT VARIABLES CHECK ===")
+        logger.info(f"SUPABASE_URL: {'SET' if os.getenv('SUPABASE_URL') else 'NOT SET'}")
+        logger.info(f"SUPABASE_KEY: {'SET' if os.getenv('SUPABASE_KEY') else 'NOT SET'}")
+        logger.info(f"GEMINI_API_KEY: {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT SET'}")
+        logger.info(f"DEBUG_ENABLED: {os.getenv('DEBUG_ENABLED', 'false')}")
+        logger.info("=== END ENVIRONMENT CHECK ===")
+        
         # Supabase OCRプロセッサ初期化
         supabase_processor = SupabaseOCRProcessor(
             supabase_url=os.getenv('SUPABASE_URL'),
@@ -127,7 +135,17 @@ async def startup_event():
         # OCRプロセッサの状態を確認
         if hasattr(supabase_processor, 'ocr_processor'):
             if supabase_processor.ocr_processor is None:
+                logger.error("=== OCR PROCESSOR INITIALIZATION FAILED ===")
                 logger.error("OCR processor is None after initialization - this will cause fallback processing")
+                logger.error("This means ImprovedOCRProcessor failed to initialize")
+                
+                # Geminiクライアントの状態も確認
+                if hasattr(supabase_processor, 'use_gemini'):
+                    logger.error(f"Gemini client status: use_gemini={supabase_processor.use_gemini}")
+                    if hasattr(supabase_processor, 'gemini_client'):
+                        logger.error(f"Gemini client object: {supabase_processor.gemini_client}")
+                
+                logger.error("=== END OCR PROCESSOR ERROR ===")
             else:
                 logger.info("OCR processor initialized successfully")
         
