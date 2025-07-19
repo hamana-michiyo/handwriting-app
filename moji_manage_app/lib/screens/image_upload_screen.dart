@@ -21,8 +21,20 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
   
   // フォーム項目
   final _writerNumberController = TextEditingController();
-  final _writerAgeController = TextEditingController();
-  final _writerGradeController = TextEditingController();
+  
+  // 学年・年代ドロップダウン（年齢フィールドの代替）
+  String? _selectedGrade;
+  final List<String> _gradeOptions = [
+    '幼児',
+    '小学低（1-3年）',
+    '小学高（4-6年）',
+    '中学生',
+    '高校生',
+    '大学・大学院',
+    '20〜40歳',
+    '40〜60歳',
+    '60歳以上',
+  ];
   
   // 処理状態
   bool _isUploading = false;
@@ -39,8 +51,6 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
   @override
   void dispose() {
     _writerNumberController.dispose();
-    _writerAgeController.dispose();
-    _writerGradeController.dispose();
     super.dispose();
   }
 
@@ -68,20 +78,12 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
     });
 
     try {
-      // 年齢の解析
-      int? writerAge;
-      if (_writerAgeController.text.isNotEmpty) {
-        writerAge = int.tryParse(_writerAgeController.text);
-      }
-
       // API呼び出し - 切り取り済み画像処理を使用
       final result = await _apiService.processCroppedFormImage(
         imagePath: widget.imagePath,
         writerNumber: _writerNumberController.text.trim(),
-        writerAge: writerAge,
-        writerGrade: _writerGradeController.text.trim().isEmpty 
-            ? null 
-            : _writerGradeController.text.trim(),
+        writerAge: null, // 年齢は学年・年代で代替
+        writerGrade: _selectedGrade,
         autoSave: true,
       );
 
@@ -273,40 +275,30 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
                       
                       const SizedBox(height: 16),
                       
-                      // 記入者年齢（オプション）
-                      TextFormField(
-                        controller: _writerAgeController,
+                      // 記入者学年・年代（ドロップダウン）
+                      DropdownButtonFormField<String>(
+                        value: _selectedGrade,
                         decoration: const InputDecoration(
-                          labelText: '年齢',
-                          hintText: '20',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.cake),
-                        ),
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          if (value != null && value.isNotEmpty) {
-                            final age = int.tryParse(value);
-                            if (age == null || age < 0 || age > 150) {
-                              return '正しい年齢を入力してください（0-150）';
-                            }
-                          }
-                          return null;
-                        },
-                        enabled: !_isUploading,
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // 記入者学年（オプション）
-                      TextFormField(
-                        controller: _writerGradeController,
-                        decoration: const InputDecoration(
-                          labelText: '学年',
-                          hintText: '大学1年',
+                          labelText: '学年・年代',
                           border: OutlineInputBorder(),
                           prefixIcon: Icon(Icons.school),
                         ),
-                        enabled: !_isUploading,
+                        hint: const Text('学年・年代を選択'),
+                        items: _gradeOptions.map((String grade) {
+                          return DropdownMenuItem<String>(
+                            value: grade,
+                            child: Text(grade),
+                          );
+                        }).toList(),
+                        onChanged: _isUploading ? null : (String? newValue) {
+                          setState(() {
+                            _selectedGrade = newValue;
+                          });
+                        },
+                        validator: (value) {
+                          // 学年は任意入力なので、バリデーションなし
+                          return null;
+                        },
                       ),
                     ],
                   ),

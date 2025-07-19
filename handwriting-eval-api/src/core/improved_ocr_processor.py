@@ -814,7 +814,7 @@ class ImprovedOCRProcessor:
         score_cand, cmt_cand = [], []
         for c in cnts:
             x, y, w, h = cv2.boundingRect(c)
-            if w < 30 or h < 30:  # 小さすぎるもの除外
+            if w < 25 or h < 25:  # 小さすぎるもの除外
                 continue
             
             ratio = w / h
@@ -830,11 +830,17 @@ class ImprovedOCRProcessor:
                 score_cand.append((X, y, w, h))
                 print(f"点数候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
             # コメント候補: 横長
-            elif ratio > 4.5:
+            elif ratio > 3.0:  # 3.0に緩和（4.5 → 3.0）
                 cmt_cand.append((X, y, w, h))
+                print(f"コメント候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
         
-        if not score_cand or not cmt_cand:
-            raise RuntimeError("点数枠 or コメント枠が検出できません")
+        if not score_cand:
+            raise RuntimeError(f"点数枠が検出できません (候補数: {len(score_cand)})")
+        
+        if not cmt_cand:
+            print(f"⚠️ コメント枠が検出されませんでした。点数枠のみで処理を続行します。")
+            # コメント枠として空のリストを設定
+            cmt_cand = []
         
         if debug:
             dbg_roi = cv2.cvtColor(th, cv2.COLOR_GRAY2BGR)
@@ -844,6 +850,8 @@ class ImprovedOCRProcessor:
         
         # 右端列だけ残す
         def keep_rightmost(boxes, tol=25):
+            if not boxes:
+                return []
             # tol: 25px 以内のものを右端とみなす
             max_x = max(b[0] for b in boxes)
             print(f"最大X座標: {max_x} (許容誤差: {tol})")
@@ -856,7 +864,8 @@ class ImprovedOCRProcessor:
             return filtered
         
         score_cand = keep_rightmost(score_cand, 40)  # 40px 以内
-        cmt_cand = keep_rightmost(cmt_cand)
+        if cmt_cand:  # コメント枠がある場合のみフィルタ適用
+            cmt_cand = keep_rightmost(cmt_cand)
         
         # 点数枠候補の平均の幅を計算
         if len(score_cand) > 0:
@@ -885,14 +894,15 @@ class ImprovedOCRProcessor:
 
         # y 昇順に 12 個ずつそろえる
         score_cand = sorted(score_cand, key=lambda b: b[1])[:12]
-        cmt_cand = sorted(cmt_cand, key=lambda b: b[1])[:12]
+        if cmt_cand:  # コメント枠がある場合のみソート
+            cmt_cand = sorted(cmt_cand, key=lambda b: b[1])[:12]
         
         # margin を内側へ入れて (x1,y1,x2,y2) に変換
         def to_box(lst, margin=4):
             return [(x+margin, y+margin, x+w-margin, y+h-margin) for (x,y,w,h) in lst]
         
         score_boxes = to_box(score_cand)
-        cmt_boxes = to_box(cmt_cand)
+        cmt_boxes = to_box(cmt_cand) if cmt_cand else []
         
         # デバッグ描画
         if debug:
@@ -903,7 +913,8 @@ class ImprovedOCRProcessor:
                 cv2.rectangle(dbg_img, (x1,y1), (x2,y2), (255,0,0), 2)  # 青=コメント
             self._save_debug_image(dbg_img, str(self.debug_dir / "dbg_score_comment_boxes.jpg"), debug)
         
-        if len(score_boxes) != 12 or len(cmt_boxes) != 12:
+        #if len(score_boxes) != 12 or len(cmt_boxes) != 12:
+        if len(score_boxes) != 12:
             raise RuntimeError(f"検出数  score:{len(score_boxes)}  cmt:{len(cmt_boxes)}")
         
         return score_boxes, cmt_boxes

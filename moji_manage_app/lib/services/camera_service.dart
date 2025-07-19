@@ -17,18 +17,36 @@ class CameraService {
       final cameras = await getAvailableCameras();
       if (cameras.isEmpty) return false;
 
+      // デバイスに応じた解像度設定
+      ResolutionPreset resolution = _getOptimalResolution();
+
       _controller = CameraController(
         cameras.first,
-        ResolutionPreset.max,
+        resolution,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
       await _controller!.initialize();
+      print('カメラ初期化完了 - 解像度: $resolution, アスペクト比: ${_controller!.value.aspectRatio}');
       return true;
     } catch (e) {
       print('カメラの初期化に失敗: $e');
       return false;
+    }
+  }
+
+  ResolutionPreset _getOptimalResolution() {
+    // プラットフォーム別に最適な解像度を選択
+    if (Platform.isAndroid) {
+      // Androidデバイス向け（機種の多様性を考慮）
+      return ResolutionPreset.veryHigh; // 1080p
+    } else if (Platform.isIOS) {
+      // iOSデバイス向け（比較的統一された性能）
+      return ResolutionPreset.max; // 4K
+    } else {
+      // その他のプラットフォーム
+      return ResolutionPreset.high; // 720p
     }
   }
 

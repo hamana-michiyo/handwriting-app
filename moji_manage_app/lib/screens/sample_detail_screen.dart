@@ -323,15 +323,15 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
       recognizedChar = '不明';
     }
 
-    // 年齢を取得
-    int age = 0;
+    // 学年・年代を取得
+    String grade = '';
     try {
       final writerInfo = _currentSample['writers'] as Map<String, dynamic>?;
       if (writerInfo != null) {
-        age = writerInfo['age'] as int? ?? 0;
+        grade = writerInfo['grade'] as String? ?? '';
       }
     } catch (e) {
-      age = 0;
+      grade = '';
     }
 
     final createdAt = DateTime.tryParse(_currentSample['created_at'] as String? ?? '') ?? DateTime.now();
@@ -359,7 +359,7 @@ class _SampleDetailScreenState extends State<SampleDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '年齢: ${age}歳',
+                    '学年・年代: ${grade.isNotEmpty ? grade : '未設定'}',
                     style: const TextStyle(fontSize: 14),
                   ),
                   const SizedBox(height: 8),

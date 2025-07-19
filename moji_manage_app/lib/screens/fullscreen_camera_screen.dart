@@ -31,17 +31,50 @@ class _FullscreenCameraScreenState extends State<FullscreenCameraScreen> {
     setState(() => _isCapturing = false);
   }
 
+  Widget _buildOptimizedCameraPreview() {
+    final controller = widget.cameraService.controller!;
+    final screenSize = MediaQuery.of(context).size;
+    
+    // カメラのアスペクト比（通常は横向き基準）
+    final cameraAspectRatio = controller.value.aspectRatio;
+    // 縦向きスマホの画面アスペクト比
+    final screenAspectRatio = screenSize.width / screenSize.height;
+    
+    // スマホ縦向きに合わせてカメラのアスペクト比を逆転
+    final adjustedCameraAspectRatio = 1.0 / cameraAspectRatio;
+    
+    print('カメラ元アスペクト比: $cameraAspectRatio (横向き基準)');
+    print('調整後アスペクト比: $adjustedCameraAspectRatio (縦向き)');
+    print('画面アスペクト比: $screenAspectRatio');
+
+    // 調整後のアスペクト比で比較
+    if ((adjustedCameraAspectRatio - screenAspectRatio).abs() < 0.1) {
+      // アスペクト比がほぼ同じ場合は全画面表示
+      return SizedBox.expand(
+        child: CameraPreview(controller),
+      );
+    } else {
+      // アスペクト比が異なる場合は正しい比率で表示
+      return Center(
+        child: AspectRatio(
+          aspectRatio: adjustedCameraAspectRatio,
+          child: CameraPreview(controller),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // カメラプレビュー（全画面）
+          // カメラプレビュー（デバイス最適化）
           Positioned.fill(
             child: widget.cameraService.controller != null &&
                     widget.cameraService.controller!.value.isInitialized
-                ? CameraPreview(widget.cameraService.controller!)
+                ? _buildOptimizedCameraPreview()
                 : const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
