@@ -28,6 +28,7 @@ class ApiService {
   static const String _processCroppedFormEndpoint = '/process-cropped-form';
   static const String _healthEndpoint = '/health';
   static const String _statsEndpoint = '/stats';
+  static const String _recentActivityEndpoint = '/recent-activity';
   
   /// APIサーバーのヘルスチェック
   Future<bool> checkHealth() async {
@@ -214,6 +215,30 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('統計情報取得失敗: $e');
+      return null;
+    }
+  }
+  
+  /// 最近の活動を取得
+  Future<List<Map<String, dynamic>>?> getRecentActivity({int limit = 10}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl$_recentActivityEndpoint?limit=$limit'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(_timeout);
+      
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+        if (responseData['success'] == true) {
+          return List<Map<String, dynamic>>.from(responseData['activities'] ?? []);
+        }
+        return null;
+      } else {
+        debugPrint('最近の活動取得エラー: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('最近の活動取得失敗: $e');
       return null;
     }
   }

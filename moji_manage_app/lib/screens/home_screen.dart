@@ -14,6 +14,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final List<CaptureData> _recentCaptures = [];
   final ApiService _apiService = ApiService();
+  
+  // APIから取得したデータ
+  Map<String, dynamic>? _stats;
+  List<Map<String, dynamic>> _recentActivities = [];
+  bool _isLoading = true;
 
   void _navigateToImageCapture() async {
     final result = await Navigator.push<CaptureData>(
@@ -34,6 +39,38 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  /// データ読み込み
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 統計情報と最近の活動を並列で取得
+      final results = await Future.wait([
+        _apiService.getStats(),
+        _apiService.getRecentActivity(limit: 10),
+      ]);
+
+      setState(() {
+        _stats = results[0] as Map<String, dynamic>?;
+        _recentActivities = (results[1] as List<Map<String, dynamic>>?) ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('データ読み込み失敗: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -104,19 +141,67 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '📊 統計情報',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem('総画像数', '${_recentCaptures.length}枚', Colors.blue),
-                _buildStatItem('評価済み', '0枚', Colors.green),
-                _buildStatItem('未評価', '${_recentCaptures.length}枚', Colors.orange),
+                const Text(
+                  '📊 統計情報',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_isLoading)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed: _loadData,
+                    tooltip: '更新',
+                  ),
               ],
             ),
+            const SizedBox(height: 12),
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: Text('読み込み中...', style: TextStyle(color: Colors.grey)),
+                ),
+              )
+            else if (_stats != null)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem(
+                    '総サンプル数',
+                    '${_stats!['stats']?['samples_count'] ?? 0}件',
+                    Colors.blue,
+                  ),
+                  _buildStatItem(
+                    '評価済み',
+                    '${_stats!['stats']?['approved_samples'] ?? 0}件',
+                    Colors.green,
+                  ),
+                  _buildStatItem(
+                    '記入者数',
+                    '${_stats!['stats']?['writers_count'] ?? 0}人',
+                    Colors.purple,
+                  ),
+                ],
+              )
+            else
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: Text(
+                    'データを取得できませんでした\nAPIサーバーが起動しているか確認してください',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -187,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            /*const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: _buildFunctionButton(
@@ -197,7 +282,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: _checkApiHealth,
                 color: Colors.orange,
               ),
-            ),
+            ),*/
           ],
         ),
       ),
@@ -249,38 +334,70 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '📈 最近の活動',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  const Text(
+                    '📈 最近の活動',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  if (!_isLoading)
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 20),
+                      onPressed: _loadData,
+                      tooltip: '更新',
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               Expanded(
-                child: _recentCaptures.isEmpty
+                child: _isLoading
                     ? const Center(
-                        child: Text(
-                          'まだデータがありません\n新規撮影から開始してください',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
-                        ),
+                        child: CircularProgressIndicator(),
                       )
-                    : ListView.separated(
-                        itemCount: _recentCaptures.length,
-                        separatorBuilder: (context, index) => const Divider(),
-                        itemBuilder: (context, index) {
-                          final capture = _recentCaptures[index];
-                          return ListTile(
-                            leading: const Icon(Icons.photo, color: Colors.blue),
-                            title: Text('${capture.writerNumber} - ${capture.captureTime.toString().split(' ')[0]}'),
-                            subtitle: Text('⭐ 未評価 📅 ${capture.captureTime.toString().split(' ')[0]}'),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('評価機能は準備中です')),
+                    : _recentActivities.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'まだデータがありません\n新規撮影から開始してください',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: _recentActivities.length,
+                            separatorBuilder: (context, index) => const Divider(),
+                            itemBuilder: (context, index) {
+                              final activity = _recentActivities[index];
+                              final hasScores = activity['has_scores'] == true;
+                              final createdAt = DateTime.tryParse(activity['created_at'] ?? '');
+                              final formattedDate = createdAt != null
+                                  ? '${createdAt.month}/${createdAt.day} ${createdAt.hour}:${createdAt.minute.toString().padLeft(2, '0')}'
+                                  : '不明';
+                              
+                              return ListTile(
+                                leading: Icon(
+                                  hasScores ? Icons.check_circle : Icons.pending,
+                                  color: hasScores ? Colors.green : Colors.orange,
+                                ),
+                                title: Text('${activity['writer_number']} - ${activity['character']}'),
+                                subtitle: Text(
+                                  '${hasScores ? '✅ 評価済み' : '⏳ 未評価'} • 📅 $formattedDate',
+                                  style: TextStyle(
+                                    color: hasScores ? Colors.green.shade700 : Colors.orange.shade700,
+                                  ),
+                                ),
+                                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const SampleListScreen(),
+                                    ),
+                                  );
+                                },
                               );
                             },
-                          );
-                        },
-                      ),
+                          ),
               ),
             ],
           ),

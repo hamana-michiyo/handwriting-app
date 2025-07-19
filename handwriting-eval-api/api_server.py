@@ -11,13 +11,17 @@ Usage:
 import io
 import os
 import base64
-from typing import Optional, Dict, Any
+import tempfile
+import shutil
+from datetime import datetime
+from typing import Optional, Dict, Any, List
 from pathlib import Path
+import logging
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import numpy as np
 from PIL import Image
 import cv2
@@ -25,12 +29,27 @@ import cv2
 from src.eval.pipeline import evaluate_pair
 from src.eval.preprocessing import preprocess_from_array
 
+# Supabase統合モジュール（オプション）
+try:
+    from src.core.supabase_ocr_processor import SupabaseOCRProcessor
+    from src.database.supabase_client import SupabaseClient
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    logging.warning("Supabase modules not available. Stats and recent activity endpoints will be disabled.")
+
+# ログ設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 # FastAPIアプリケーション初期化
 app = FastAPI(
     title="手書き文字評価API",
-    description="お手本とユーザー画像を4軸（形・黒・白・場）で評価するAPI",
-    version="0.2.3"
+    description="Gemini AI + Supabase統合による手書き文字認識・評価システム",
+    version="0.8.6",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # CORS設定（フロントエンドからのアクセスを許可）
@@ -78,6 +97,69 @@ class FormProcessResponse(BaseModel):
     perspective_corrected: Optional[bool] = False
     processing_time: Optional[float] = 0.0
 
+# ======= Supabase統合関連モデル =======
+
+class StatsResponse(BaseModel):
+    """統計情報レスポンス"""
+    success: bool = Field(..., description="取得成功フラグ")
+    stats: Dict[str, Any] = Field(..., description="統計情報")
+    timestamp: str = Field(..., description="取得タイムスタンプ")
+
+class RecentActivityResponse(BaseModel):
+    """最近の活動レスポンス"""
+    success: bool = Field(..., description="取得成功フラグ")
+    activities: List[Dict[str, Any]] = Field(..., description="最近の活動リスト")
+    count: int = Field(..., description="活動件数")
+    timestamp: str = Field(..., description="取得タイムスタンプ")
+
+# ======= グローバル変数 =======
+
+# Supabase統合プロセッサ（オプション）
+if SUPABASE_AVAILABLE:
+    supabase_processor: Optional[SupabaseOCRProcessor] = None
+else:
+    supabase_processor = None
+
+
+# ======= Supabase統合初期化 =======
+
+def initialize_supabase_processor():
+    """Supabase統合プロセッサの初期化"""
+    global supabase_processor
+    
+    if not SUPABASE_AVAILABLE:
+        logger.warning("Supabase modules not available - stats endpoints will be disabled")
+        return
+    
+    try:
+        # 環境変数確認
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_KEY')
+        
+        if not supabase_url or not supabase_key:
+            logger.warning("Supabase credentials not found - stats endpoints will be disabled")
+            return
+            
+        # SupabaseOCRProcessor初期化
+        supabase_processor = SupabaseOCRProcessor(
+            supabase_url=supabase_url,
+            supabase_key=supabase_key
+        )
+        
+        # 接続テスト
+        if supabase_processor:
+            stats = supabase_processor.get_database_stats()
+            logger.info(f"Supabase integration initialized successfully. Stats: {stats}")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize Supabase processor: {e}")
+        supabase_processor = None
+
+@app.on_event("startup")
+async def startup_event():
+    """アプリケーション起動時の処理"""
+    logger.info("Starting handwriting evaluation API server...")
+    initialize_supabase_processor()
 
 # ======= ユーティリティ関数 =======
 
@@ -571,6 +653,73 @@ async def evaluate_uploaded_images(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"評価エラー: {str(e)}")
+
+
+# ======= Supabase統合エンドポイント =======
+
+@app.get("/stats", response_model=StatsResponse, summary="統計情報取得")
+async def get_stats():
+    """
+    データベース統計情報を取得
+    
+    Returns:
+        統計情報（記入者数、文字数、サンプル数など）
+    """
+    if not SUPABASE_AVAILABLE or supabase_processor is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Supabase integration not available. Please check environment variables."
+        )
+    
+    try:
+        stats = supabase_processor.get_database_stats()
+        
+        response = StatsResponse(
+            success=True,
+            stats=stats,
+            timestamp=datetime.now().isoformat()
+        )
+        
+        logger.info("Retrieved database statistics")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/recent-activity", response_model=RecentActivityResponse, summary="最近の活動取得")
+async def get_recent_activity(limit: int = 10):
+    """
+    最近の活動を取得
+    
+    Args:
+        limit: 取得件数（デフォルト: 10件）
+    
+    Returns:
+        最近の手書きサンプル活動リスト
+    """
+    if not SUPABASE_AVAILABLE or supabase_processor is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Supabase integration not available. Please check environment variables."
+        )
+    
+    try:
+        activities = supabase_processor.supabase.get_recent_activity(limit)
+        
+        response = RecentActivityResponse(
+            success=True,
+            activities=activities,
+            count=len(activities),
+            timestamp=datetime.now().isoformat()
+        )
+        
+        logger.info(f"Retrieved {len(activities)} recent activities")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting recent activity: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 # ======= アプリケーション起動 =======

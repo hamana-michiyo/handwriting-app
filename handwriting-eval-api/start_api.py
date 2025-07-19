@@ -73,7 +73,7 @@ def start_development_server():
     
     cmd = [
         sys.executable, "-m", "uvicorn",
-        "supabase_api_server:app",
+        "api_server:app",
         "--host", "0.0.0.0",
         "--port", "8001",
         "--reload",
@@ -99,7 +99,7 @@ def start_production_server():
     
     cmd = [
         sys.executable, "-m", "uvicorn",
-        "supabase_api_server:app",
+        "api_server:app",
         "--host", "0.0.0.0",
         "--port", port,
         "--workers", workers,

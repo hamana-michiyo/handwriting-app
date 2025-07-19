@@ -47,4 +47,4 @@ RUN chown -R apiuser:apiuser /workspace
 USER apiuser
 
 # アプリケーション起動
-CMD ["python", "-m", "uvicorn", "supabase_api_server:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-m", "uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8001"]

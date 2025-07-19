@@ -497,6 +497,51 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             return {}
+    
+    def get_recent_activity(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        最近の活動取得
+        
+        Args:
+            limit: 取得件数
+            
+        Returns:
+            最近の活動リスト
+        """
+        try:
+            # 最近の手書きサンプルを取得（作成日順）
+            result = self.supabase.table('writing_samples')\
+                .select('*, writers!inner(writer_number, age), characters!inner(character)')\
+                .order('created_at', desc=True)\
+                .limit(limit)\
+                .execute()
+            
+            activity_list = []
+            for sample in result.data:
+                activity_list.append({
+                    'id': sample['id'],
+                    'writer_number': sample['writers']['writer_number'],
+                    'writer_age': sample['writers']['age'],
+                    'character': sample['characters']['character'],
+                    'created_at': sample['created_at'],
+                    'quality_status': sample['quality_status'],
+                    'score_white': sample.get('score_white'),
+                    'score_black': sample.get('score_black'),
+                    'score_center': sample.get('score_center'),
+                    'score_shape': sample.get('score_shape'),
+                    'has_scores': all([
+                        sample.get('score_white') is not None,
+                        sample.get('score_black') is not None,
+                        sample.get('score_center') is not None,
+                        sample.get('score_shape') is not None
+                    ])
+                })
+            
+            return activity_list
+            
+        except Exception as e:
+            logger.error(f"Error getting recent activity: {e}")
+            return []
 
 # ===========================
 # 使用例・テスト用関数

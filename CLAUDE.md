@@ -4,6 +4,48 @@
 
 ## 🎉 最新実装完了（2025-07-19）
 
+### ✅ Flutter統計機能・API統合完了（v0.8.7） - TOP画面実データ表示
+
+**v0.8.7 Flutter統計機能とAPI統合**:
+- 📊 **TOPページ統計表示**: 記入者数、文字種類数、総サンプル数、本日の登録数のリアルタイム表示
+- 📱 **最近の活動表示**: 最新10件の登録サンプル一覧（記入者・文字・日時）
+- 🔗 **API統合完了**: `/stats` と `/recent-activity` エンドポイントの実装・統合
+- 🎯 **統一API構成**: api_server.py と supabase_api_server.py を統合し、混乱解消
+- 🐳 **Docker環境統一**: 開発・本番環境での統一されたAPI動作確認
+- ⚡ **リアルタイム更新**: Flutter initState() でのAPI呼び出しによる動的データ読み込み
+
+**v0.8.7 技術実装**:
+- ✅ **Flutter側**: ApiService に `getStats()` と `getRecentActivity()` メソッド追加
+- ✅ **API側**: FastAPI に `/stats` と `/recent-activity` エンドポイント追加
+- ✅ **統合処理**: SupabaseOCRProcessor の統計・活動データ取得メソッド実装
+- ✅ **エラーハンドリング**: ネットワークエラー・サーバーエラーの適切な表示
+- ✅ **設定統一**: docker-compose.yml, render.yaml, Dockerfile.api の統一API設定
+
+**v0.8.7 API エンドポイント**:
+```python
+@app.get("/stats", response_model=StatsResponse)
+async def get_stats():
+    # 統計情報: 記入者数、文字種類数、総サンプル数、本日登録数
+    
+@app.get("/recent-activity", response_model=RecentActivityResponse) 
+async def get_recent_activity(limit: int = 10):
+    # 最近の活動: 最新登録サンプル一覧
+```
+
+**v0.8.7 Flutter統計画面**:
+```dart
+class _HomeScreenState extends State<HomeScreen> {
+  Map<String, dynamic>? _stats;
+  List<Map<String, dynamic>>? _recentActivity;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadData(); // リアルタイムデータ読み込み
+  }
+}
+```
+
 ### ✅ DEV_MODE環境変数によるデバッグ出力制御実装完了（v0.8.6） - 開発/本番環境完全分離
 
 **v0.8.6 デバッグ出力制御システム**:
@@ -275,6 +317,8 @@ python evaluate.py data/samples/ref_光.jpg data/samples/user_光1.jpg --dbg
 #### API エンドポイント
 - `POST /process-cropped-form` - トリミング済み画像処理（Base64対応、SupabaseOCRProcessor統合済み）
 - `POST /process-form` - 記入用紙画像処理（Base64対応、従来版）
+- `GET /stats` - 統計情報取得（記入者数、文字種類数、総サンプル数、本日登録数）
+- `GET /recent-activity` - 最近の活動取得（最新登録サンプル一覧）
 - `GET /health` - ヘルスチェック
 - `GET /docs` - Swagger UIドキュメント
 
@@ -346,6 +390,8 @@ Flutterアプリは日本語手書き文字評価を対象としているため�
 ### API通信設定
 - **ベースURL**: `http://localhost:8001`
 - **メインエンドポイント**: `/process-cropped-form` (v0.8.3: API統合・評価スコア保存完全対応)
+- **統計エンドポイント**: `/stats` (v0.8.7: TOPページ統計表示)
+- **活動エンドポイント**: `/recent-activity` (v0.8.7: 最近の活動表示)
 - **従来エンドポイント**: `/process-form`
 - **タイムアウト**: 60秒
 - **画像形式**: `data:image/jpeg;base64,{base64_data}`

@@ -20,7 +20,7 @@ docker exec bimoji-workspace-handwriting-eval-api-1 python src/core/improved_ocr
 docker exec bimoji-workspace-handwriting-eval-api-1 python src/core/supabase_ocr_processor.py
 
 # FastAPI サーバー（Flutter連携用）
-python supabase_api_server.py
+python api_server.py
 
 # 補助線除去比較テスト
 docker exec bimoji-workspace-handwriting-eval-api-1 python prototype/moji_clean_advanced.py
@@ -35,7 +35,7 @@ docker exec bimoji-workspace-handwriting-eval-api-1 ls debug/
 #### 環境設定
 ```bash
 # 1. 依存関係インストール（PyTorch + Supabase対応）
-docker exec bimoji-workspace-handwriting-eval-api-1 pip install -r requirements_supabase.txt
+docker exec bimoji-workspace-handwriting-eval-api-1 pip install -r requirements_api.txt
 
 # 2. .env設定（Gemini + Supabase）
 cp .env.example .env
@@ -649,7 +649,7 @@ DEBUG_ENABLED=false
 ```yaml
 # render.yaml (自動読み込み)
 buildCommand: pip install -r requirements_api.txt
-startCommand: uvicorn supabase_api_server:app --host 0.0.0.0 --port $PORT
+startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT
 ```
 
 #### 4. デプロイ実行

@@ -10,6 +10,8 @@ services:
       - ./handwriting-eval-api:/workspace
     working_dir: /workspace
     command: uvicorn api_server:app --reload --host 0.0.0.0 --port 8001
+    env_file:
+      - ./handwriting-eval-api/.env
     environment:
       - PYTHONPATH=/workspace
     networks:
