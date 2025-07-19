@@ -2,7 +2,40 @@
 
 このファイルは、Claude Code (claude.ai/code) がこのリポジトリでコードを扱う際のガイダンスを提供します。
 
-## 🎉 最新実装完了（2025-07-18）
+## 🎉 最新実装完了（2025-07-19）
+
+### ✅ DEV_MODE環境変数によるデバッグ出力制御実装完了（v0.8.6） - 開発/本番環境完全分離
+
+**v0.8.6 デバッグ出力制御システム**:
+- 🔧 **DEV_MODE環境変数**: render.yaml とローカル.env での完全制御
+- 🗂️ **条件付きファイル出力**: debug画像ファイルの開発環境限定生成
+- 🚀 **本番環境最適化**: 不要なデバッグファイル生成なしでパフォーマンス向上
+- 🛠️ **開発環境**: DEV_MODE=true で全デバッグ画像出力（16種類のファイル）
+- ⚡ **処理効率向上**: 本番環境でのファイルI/O削減による高速化
+
+**v0.8.6 技術実装**:
+- ✅ **ヘルパーメソッド**: `_save_debug_image()` による統一制御
+- ✅ **全cv2.imwrite置換**: 16箇所の画像出力を条件付きに変更
+- ✅ **メソッド連携**: debug parameter の完全なパラメータ伝搬
+- ✅ **環境変数統合**: supabase_ocr_processor.py でのDEV_MODE読み取り
+- ✅ **エラー修正**: process_form内のハードコードdebug=True問題解決
+
+**v0.8.6 環境設定**:
+```bash
+# ローカル開発環境 (.env)
+DEV_MODE=true    # デバッグファイル出力有効
+
+# Render本番環境 (render.yaml)  
+DEV_MODE=false   # デバッグファイル出力無効
+```
+
+**v0.8.6 デバッグファイル制御対象**:
+- 📷 **文字画像**: improved_char_*.jpg (補助線除去前後)
+- 🔢 **数字画像**: improved_score_*.jpg, improved_writer_id.jpg
+- 💬 **コメント画像**: improved_comment_*.jpg
+- 🔍 **検出デバッグ**: dbg_corners.jpg, dbg_cells_contour.jpg
+- 🌅 **照明補正**: a4_lighting_corrected.jpg
+- 📐 **透視変換**: improved_corrected.jpg
 
 ### ✅ Renderプロダクションデプロイ完了（v0.8.5） - 本番環境稼働開始
 

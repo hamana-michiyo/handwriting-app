@@ -120,6 +120,7 @@ async def startup_event():
         logger.info(f"SUPABASE_KEY: {'SET' if os.getenv('SUPABASE_KEY') else 'NOT SET'}")
         logger.info(f"GEMINI_API_KEY: {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT SET'}")
         logger.info(f"DEBUG_ENABLED: {os.getenv('DEBUG_ENABLED', 'false')}")
+        logger.info(f"DEV_MODE: {os.getenv('DEV_MODE', 'false')}")
         logger.info("=== END ENVIRONMENT CHECK ===")
         
         # Supabase OCRプロセッサ初期化

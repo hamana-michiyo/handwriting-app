@@ -100,6 +100,14 @@ class ImprovedOCRProcessor:
             logger.warning(f"PyTorchモデル初期化失敗: {e}")
             self.use_pytorch = False
     
+    def _save_debug_image(self, image, filepath: str, debug: bool = False):
+        """デバッグ画像を条件付きで保存"""
+        if debug:
+            cv2.imwrite(filepath, image)
+            logger.info(f"デバッグ画像保存: {filepath}")
+        else:
+            logger.debug(f"デバッグ画像保存スキップ: {filepath}")
+    
     def find_page_corners(self, gray: np.ndarray) -> Optional[np.ndarray]:
         """改良版ページ検出ロジック"""
         try:
@@ -248,8 +256,8 @@ class ImprovedOCRProcessor:
             dbg_img = img.copy()
             for (x, y) in pts.astype(int):
                 cv2.circle(dbg_img, (x, y), 10, (0, 0, 255), -1)
-            cv2.imwrite(str(self.debug_dir / "dbg_corners.jpg"), dbg_img)
-            cv2.imwrite(str(self.debug_dir / "dbg_warped.jpg"), warped)
+            self._save_debug_image(dbg_img, str(self.debug_dir / "dbg_corners.jpg"), dbg)
+            self._save_debug_image(warped, str(self.debug_dir / "dbg_warped.jpg"), dbg)
         
         return warped
     
@@ -263,7 +271,7 @@ class ImprovedOCRProcessor:
         # デバッグ用照明補正画像保存
         if debug:
             debug_lighting = self.debug_dir / "a4_lighting_corrected.jpg"
-            cv2.imwrite(str(debug_lighting), lighting_corrected_image)
+            self._save_debug_image(lighting_corrected_image, str(debug_lighting), debug)
         
         gray = cv2.cvtColor(lighting_corrected_image, cv2.COLOR_BGR2GRAY) if len(lighting_corrected_image.shape) == 3 else lighting_corrected_image
         
@@ -364,7 +372,7 @@ class ImprovedOCRProcessor:
                 for (x, y, w, h) in right_boxes:
                     cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 0, 0), 2)
                 
-                cv2.imwrite(str(self.debug_dir / "dbg_cells_contour.jpg"), dbg)
+                self._save_debug_image(dbg, str(self.debug_dir / "dbg_cells_contour.jpg"), debug)
                 
                 # ログ出力
                 print(f"[文字セル検出] 候補数: {len(cand)}, 右列候補: {len(right_boxes)}, 最終選択: {len(cells)}個")
@@ -433,15 +441,15 @@ class ImprovedOCRProcessor:
             region_image = gray[y1:y2, x1:x2]
             
             # 補助線除去を適用
-            cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name)
+            cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name, debug=debug)
             
             # デバッグ保存（補助線除去前）
             char_file = self.debug_dir / f"improved_char_{name}_original.jpg"
-            cv2.imwrite(str(char_file), region_image)
+            self._save_debug_image(region_image, str(char_file), debug)
             
             # デバッグ保存（補助線除去後）
             char_file_cleaned = self.debug_dir / f"improved_char_{name}.jpg"
-            cv2.imwrite(str(char_file_cleaned), cleaned_region)
+            self._save_debug_image(cleaned_region, str(char_file_cleaned), debug)
             logger.info(f"{name}文字領域保存（補助線除去済み）: {char_file_cleaned}")
             
             # Gemini文字認識（補助線除去後の画像を使用）
@@ -493,7 +501,7 @@ class ImprovedOCRProcessor:
             logger.warning(f"照明補正エラー: {e}")
             return image
     
-    def remove_guidelines(self, image: np.ndarray, save_debug=False, debug_name="") -> np.ndarray:
+    def remove_guidelines(self, image: np.ndarray, save_debug=False, debug_name="", debug=False) -> np.ndarray:
         """改良補助線除去（文字保護強化 + コントラスト改善）"""
         try:
             # グレースケール変換
@@ -566,8 +574,8 @@ class ImprovedOCRProcessor:
             clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE,
                                     np.ones((2, 2), np.uint8), 1)
 
-            return cv2.bitwise_not(clean)
-
+            result = cv2.bitwise_not(clean)
+            
             # デバッグ保存（複数ステップ）
             if save_debug and debug_name and self.debug_dir:
                 debug_file = self.debug_dir / f"guideline_removed_{debug_name}.jpg"
@@ -576,12 +584,13 @@ class ImprovedOCRProcessor:
                 dbg_guide_file = self.debug_dir / f"dbg_guide_{debug_name}.jpg"
                 dbg_inpaint_file = self.debug_dir / f"dbg_inpaint_{debug_name}.jpg"
                 
-                cv2.imwrite(str(dbg_thin_file), thin)
-                cv2.imwrite(str(dbg_guide_file), guide)
-                cv2.imwrite(str(dbg_inpaint_file), inpainted)
+                # Note: these variables (thin, guide, inpainted) are not defined in the current code
+                # self._save_debug_image(thin, str(dbg_thin_file), debug and save_debug)
+                # self._save_debug_image(guide, str(dbg_guide_file), debug and save_debug)
+                # self._save_debug_image(inpainted, str(dbg_inpaint_file), debug and save_debug)
 
-                cv2.imwrite(str(debug_file), result)
-                #cv2.imwrite(str(enhanced_file), enhanced)
+                self._save_debug_image(result, str(debug_file), debug and save_debug)
+                #self._save_debug_image(enhanced, str(enhanced_file), debug and save_debug)
                 logger.info(f"改良補助線除去結果保存: {debug_file}")
             
             return result
@@ -638,7 +647,7 @@ class ImprovedOCRProcessor:
             logger.error(f"PyTorch認識エラー ({region_name}): {e}")
             return "", 0.0
     
-    def preprocess_number_image(self, image: np.ndarray, debug_name: str) -> List[np.ndarray]:
+    def preprocess_number_image(self, image: np.ndarray, debug_name: str, debug=False) -> List[np.ndarray]:
         """数字画像の前処理（複数バリエーション生成）"""
         # グレースケール変換
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
@@ -691,11 +700,11 @@ class ImprovedOCRProcessor:
             
             # デバッグ保存
             debug_file = self.debug_dir / f"improved_debug_{debug_name}_{method_name}.jpg"
-            cv2.imwrite(str(debug_file), cleaned)
+            self._save_debug_image(cleaned, str(debug_file), debug)
         
         return preprocessed_images
     
-    def perform_enhanced_number_ocr(self, image: np.ndarray, region_name: str) -> Tuple[str, float]:
+    def perform_enhanced_number_ocr(self, image: np.ndarray, region_name: str, debug=False) -> Tuple[str, float]:
         """強化された数字OCR（PyTorchモデル優先）"""
         
         # PyTorchモデルを最初に試す
@@ -709,7 +718,7 @@ class ImprovedOCRProcessor:
         
         # Tesseractフォールバック
         # 複数の前処理画像を生成
-        preprocessed_images = self.preprocess_number_image(image, region_name.replace(' ', '_'))
+        preprocessed_images = self.preprocess_number_image(image, region_name.replace(' ', '_'), debug=debug)
         
         # 複数のTesseract設定（緩い設定を追加）
         ocr_configs = [
@@ -830,7 +839,7 @@ class ImprovedOCRProcessor:
             dbg_roi = cv2.cvtColor(th, cv2.COLOR_GRAY2BGR)
             for X, Y, w, h in score_cand:
                 cv2.rectangle(dbg_roi, (X - roi_x0, Y), (X - roi_x0 + w, Y + h), (0, 255, 255), 1)
-            cv2.imwrite(str(self.debug_dir / "dbg_score_candidates.jpg"), dbg_roi)
+            self._save_debug_image(dbg_roi, str(self.debug_dir / "dbg_score_candidates.jpg"), debug)
         
         # 右端列だけ残す
         def keep_rightmost(boxes, tol=25):
@@ -870,7 +879,7 @@ class ImprovedOCRProcessor:
                 cv2.rectangle(dbg_img, (x1,y1), (x2,y2), (0,0,255), 2)  # 赤=点数
             for x1,y1,x2,y2 in cmt_boxes:
                 cv2.rectangle(dbg_img, (x1,y1), (x2,y2), (255,0,0), 2)  # 青=コメント
-            cv2.imwrite(str(self.debug_dir / "dbg_score_comment_boxes.jpg"), dbg_img)
+            self._save_debug_image(dbg_img, str(self.debug_dir / "dbg_score_comment_boxes.jpg"), debug)
         
         if len(score_boxes) != 12 or len(cmt_boxes) != 12:
             raise RuntimeError(f"検出数  score:{len(score_boxes)}  cmt:{len(cmt_boxes)}")
@@ -903,8 +912,8 @@ class ImprovedOCRProcessor:
         try:
             # 記入者番号抽出
             writer_region = self.extract_writer_id_region(corrected_gray)
-            cv2.imwrite(str(self.debug_dir / "improved_writer_id.jpg"), writer_region)
-            text, confidence = self.perform_enhanced_number_ocr(writer_region, "記入者番号")
+            self._save_debug_image(writer_region, str(self.debug_dir / "improved_writer_id.jpg"), debug)
+            text, confidence = self.perform_enhanced_number_ocr(writer_region, "記入者番号", debug=debug)
             number_results["writer_number"] = {
                 "text": text,
                 "confidence": confidence,
@@ -924,8 +933,8 @@ class ImprovedOCRProcessor:
                     name = eval_names[idx]
                     region_image = corrected_gray[y1:y2, x1:x2]
                     score_file = self.debug_dir / f"improved_score_{idx+1}.jpg"
-                    cv2.imwrite(str(score_file), region_image)
-                    text, confidence = self.perform_enhanced_number_ocr(region_image, name)
+                    self._save_debug_image(region_image, str(score_file), debug)
+                    text, confidence = self.perform_enhanced_number_ocr(region_image, name, debug=debug)
                     number_results["evaluations"][name] = {
                         "text": text,
                         "confidence": confidence,
@@ -942,7 +951,7 @@ class ImprovedOCRProcessor:
                     name = comment_names[idx]
                     region_image = corrected_gray[y1:y2, x1:x2]
                     comment_file = self.debug_dir / f"improved_comment_{idx+1}.jpg"
-                    cv2.imwrite(str(comment_file), region_image)
+                    self._save_debug_image(region_image, str(comment_file), debug)
                     # コメントはOCRしないで保存のみ
                     number_results["comments"][name] = {
                         "bbox": (x1, y1, x2, y2),
@@ -967,8 +976,8 @@ class ImprovedOCRProcessor:
         logger.info(f"元画像サイズ: {original_image.shape}")
         
         # 透視変換適用（A4画像全体照明補正を含む）
-        corrected_image = self.correct_perspective(original_image, debug=True)
-        cv2.imwrite(str(self.debug_dir / "improved_corrected.jpg"), corrected_image)
+        corrected_image = self.correct_perspective(original_image, debug=debug)
+        self._save_debug_image(corrected_image, str(self.debug_dir / "improved_corrected.jpg"), debug)
         
         # 文字領域抽出（動的検出）
         character_images = self.extract_character_regions(corrected_image, debug)
@@ -1014,7 +1023,9 @@ def main():
     
     try:
         #results = processor.process_form("docs/記入sample.JPG", debug=True)
-        results = processor.process_form("debug/original_input.jpg", debug=True)
+        # DEV_MODE環境変数からデバッグモードを決定
+        debug_mode = os.getenv('DEV_MODE', 'false').lower() == 'true'
+        results = processor.process_form("debug/original_input.jpg", debug=debug_mode)
 
         print("\n=== 改良版処理結果（page_split.py統合 + Gemini認識） ===")
         print(f"歪み補正: {'適用' if results['correction_applied'] else '未適用'}")

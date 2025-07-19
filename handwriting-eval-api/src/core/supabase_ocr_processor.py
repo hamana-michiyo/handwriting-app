@@ -71,6 +71,10 @@ class SupabaseOCRProcessor:
         self.debug_enabled = debug_enabled
         self.debug_dir = "debug"  # 常にdebugディレクトリを設定
         
+        # 開発モード設定（デバッグ出力制御用）
+        self.dev_mode = os.getenv('DEV_MODE', 'false').lower() == 'true'
+        logger.info(f"Development mode: {self.dev_mode}")
+        
         # Geminiクライアント初期化
         try:
             if GeminiCharacterRecognizer:
@@ -129,7 +133,7 @@ class SupabaseOCRProcessor:
             
             # OCR処理実行
             if self.ocr_processor:
-                ocr_results = self.ocr_processor.process_form(image_path, debug=self.debug_enabled)
+                ocr_results = self.ocr_processor.process_form(image_path, debug=self.dev_mode)
                 logger.info(f"OCR結果のキー: {list(ocr_results.keys())}")
             else:
                 # 簡易フォールバック処理
