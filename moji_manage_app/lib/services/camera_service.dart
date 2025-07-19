@@ -59,7 +59,7 @@ class CameraService {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 98,
+        imageQuality: 100,
         maxWidth: 6000,
         maxHeight: 4000,
       );
