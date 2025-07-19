@@ -814,20 +814,21 @@ class ImprovedOCRProcessor:
         score_cand, cmt_cand = [], []
         for c in cnts:
             x, y, w, h = cv2.boundingRect(c)
-            if w < 20 or h < 30:  # 小さすぎるもの除外
+            if w < 30 or h < 30:  # 小さすぎるもの除外
                 continue
             
             ratio = w / h
             area = w * h
-            if area < 600:  #20×30
+            if area < 600:  # 面積が小さすぎるもの除外
                 continue
             
             # (x,y) をフル画像座標系に直す
             X = x + roi_x0
             
             # 点数候補: 正方形〜やや縦長
-            if 0.8 < ratio < 1.3:
+            if 0.9 < ratio < 1.2:
                 score_cand.append((X, y, w, h))
+                print(f"点数候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
             # コメント候補: 横長
             elif ratio > 4.5:
                 cmt_cand.append((X, y, w, h))
@@ -845,21 +846,42 @@ class ImprovedOCRProcessor:
         def keep_rightmost(boxes, tol=25):
             # tol: 25px 以内のものを右端とみなす
             max_x = max(b[0] for b in boxes)
-            return [b for b in boxes if abs(b[0] - max_x) < tol]
+            print(f"最大X座標: {max_x} (許容誤差: {tol})")
+            filtered = [b for b in boxes if abs(b[0] - max_x) <= tol]
+            print(f"フィルタ前: {len(boxes)}個, フィルタ後: {len(filtered)}個")
+            for i, b in enumerate(boxes):
+                diff = abs(b[0] - max_x)
+                included = diff <= tol
+                print(f"  [{i}] X:{b[0]}, diff:{diff}, included:{included}")
+            return filtered
         
         score_cand = keep_rightmost(score_cand, 40)  # 40px 以内
         cmt_cand = keep_rightmost(cmt_cand)
         
         # 点数枠候補の平均の幅を計算
         if len(score_cand) > 0:
+            before_width_filter = len(score_cand)
+            # 幅の平均を計算して、外れ値を除去
             #avg_w = sum(b[2] for b in score_cand) / len(score_cand)
+            #print(f"平均幅: {avg_w:.1f}px, 許容範囲: {0.8*avg_w:.1f} - {1.2*avg_w:.1f}px")
             # 幅が平均の 0.8〜1.2 倍のものだけ残す
             #score_cand = [b for b in score_cand if 0.8 * avg_w < b[2] < 1.2 * avg_w]
+            
             widths = np.array([b[2] for b in score_cand])
             q1, q3   = np.percentile(widths, [25, 75])
+            print(f"幅の四分位数: Q1={q1:.1f}, Q3={q3:.1f}")
             iqr      = q3 - q1
-            lo, hi   = q1 - 1.5*iqr, q3 + 1.5*iqr      # 外れ値しきい
-            score_cand = [b for b in score_cand if lo < b[2] < hi]
+            if iqr == 0:
+                # IQRが0の場合（幅が均一）は全て残す
+                print(f"幅が均一（IQR=0）のため、全ての候補を残します")
+                lo, hi = min(widths) - 1, max(widths) + 1
+            else:
+                lo, hi   = q1 - 1.5*iqr, q3 + 1.5*iqr      # 外れ値しきい
+            print(f"幅の外れ値しきい: {lo:.1f} - {hi:.1f} px")
+            score_cand = [b for b in score_cand if lo <= b[2] <= hi]
+            print(f"幅フィルタ前: {before_width_filter}個, 幅フィルタ後: {len(score_cand)}個")
+            for i, b in enumerate(score_cand):
+                print(f"  残った候補[{i}]: X:{b[0]}, 幅:{b[2]}px")
 
         # y 昇順に 12 個ずつそろえる
         score_cand = sorted(score_cand, key=lambda b: b[1])[:12]
