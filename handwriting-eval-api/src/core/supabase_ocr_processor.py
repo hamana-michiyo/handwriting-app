@@ -69,7 +69,7 @@ class SupabaseOCRProcessor:
         
         # OCRプロセッサ初期化
         self.debug_enabled = debug_enabled
-        self.debug_dir = "debug" if debug_enabled else None
+        self.debug_dir = "debug"  # 常にdebugディレクトリを設定
         
         # Geminiクライアント初期化
         try:
