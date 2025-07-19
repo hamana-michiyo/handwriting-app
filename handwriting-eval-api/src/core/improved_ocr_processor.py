@@ -79,6 +79,16 @@ class ImprovedOCRProcessor:
         try:
             self.pytorch_model = SimpleCNN()
             model_path = "/workspace/data/digit_model.pt"
+            if not os.path.exists(model_path):
+                logger.error(f"PyTorchモデルファイルが見つかりません: {model_path}")
+                logger.error(f"現在のワーキングディレクトリ: {os.getcwd()}")
+                logger.error(f"ディレクトリ内容: {os.listdir('.') if os.path.exists('.') else 'N/A'}")
+                if os.path.exists('data'):
+                    logger.error(f"dataディレクトリ内容: {os.listdir('data')}")
+                else:
+                    logger.error("dataディレクトリが存在しません")
+                self.pytorch_model = None
+                return
             if os.path.exists(model_path):
                 self.pytorch_model.load_state_dict(torch.load(model_path, map_location='cpu'))
                 self.pytorch_model.eval()
