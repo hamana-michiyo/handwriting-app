@@ -295,7 +295,6 @@ class SupabaseOCRProcessor:
                     continue
                 
                 # 補助線除去済み画像データを準備（ストレージ保存用）
-                # 現在は元画像を使用
                 image_bytes = None
                 image_array = None
                 try:
@@ -309,10 +308,20 @@ class SupabaseOCRProcessor:
                         logger.info(f"補助線除去済み画像を使用: {cleaned_image_path}")
                     else:
                         logger.warning(f"補助線除去済み画像が見つかりません: {cleaned_image_path}")
-                        continue
+                        # フォールバック処理の場合は元画像データを使用
+                        if "image" in char_data:
+                            image_array = char_data["image"]
+                            # numpy配列をJPEGバイトに変換
+                            _, buffer = cv2.imencode('.jpg', image_array)
+                            image_bytes = buffer.tobytes()
+                            logger.info(f"フォールバック画像データを使用: {char_key}")
+                        else:
+                            logger.warning(f"フォールバック画像データも見つかりません: {char_key}")
+                            # 画像なしでも処理を続行
+                            pass
                 except Exception as e:
-                    logger.error(f"補助線除去済み画像読み込みエラー: {e}")
-                    continue
+                    logger.error(f"画像読み込みエラー: {e}")
+                    # エラーでも処理を続行
                 
                 # 結果構築
                 result = {
