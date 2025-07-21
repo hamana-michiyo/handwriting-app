@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'image_capture_screen.dart';
 import 'sample_list_screen.dart';
+import 'document_scanner_screen.dart';
 import '../models/capture_data.dart';
 import '../services/api_service.dart';
 
@@ -272,17 +273,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            /*const SizedBox(height: 16),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: _buildFunctionButton(
-                icon: Icons.health_and_safety,
-                title: '🔧 APIヘルスチェック',
-                subtitle: 'サーバー接続確認',
-                onTap: _checkApiHealth,
-                color: Colors.orange,
+                icon: Icons.document_scanner,
+                title: '🧪 Document Scanner実験',
+                subtitle: '自動エッジ検出・透視変換・画質向上',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DocumentScannerScreen(),
+                    ),
+                  );
+                },
+                color: Colors.purple,
               ),
-            ),*/
+            ),
           ],
         ),
       ),
