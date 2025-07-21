@@ -288,10 +288,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
     } catch (e) {
       if (e.toString().contains('permission') || e.toString().contains('Permission')) {
         setState(() => _isScanning = false);
-        if (!await _checkAndRequestPermissions()) {
-          return;
-        }
-        await _scanHighQuality();
+        await _showPermissionHandlerIssueDialog();
       } else {
         _showErrorDialog('高品質スキャン失敗', 'エラー: ${e.toString()}');
       }
@@ -323,10 +320,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
     } catch (e) {
       if (e.toString().contains('permission') || e.toString().contains('Permission')) {
         setState(() => _isScanning = false);
-        if (!await _checkAndRequestPermissions()) {
-          return;
-        }
-        await _scanFromGallery();
+        await _showPermissionHandlerIssueDialog();
       } else {
         _showErrorDialog('ギャラリースキャン失敗', 'エラー: ${e.toString()}');
       }
@@ -357,10 +351,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
     } catch (e) {
       if (e.toString().contains('permission') || e.toString().contains('Permission')) {
         setState(() => _isScanning = false);
-        if (!await _checkAndRequestPermissions()) {
-          return;
-        }
-        await _scanCameraOnly();
+        await _showPermissionHandlerIssueDialog();
       } else {
         _showErrorDialog('カメラスキャン失敗', 'エラー: ${e.toString()}');
       }
