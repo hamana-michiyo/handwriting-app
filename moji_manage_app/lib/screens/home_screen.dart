@@ -273,24 +273,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: _buildFunctionButton(
-                icon: Icons.document_scanner,
-                title: '🧪 Document Scanner実験',
-                subtitle: '自動エッジ検出・透視変換・画質向上\n※Manualモード推奨（精度重視）',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const DocumentScannerScreen(),
-                    ),
-                  );
-                },
-                color: Colors.purple,
-              ),
-            ),
           ],
         ),
       ),
