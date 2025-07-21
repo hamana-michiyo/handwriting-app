@@ -31,7 +31,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         print('cunning_document_scanner呼び出し（Podfile設定完了後）');
       }
       
-      // Podfile設定後のcunning_document_scanner呼び出し
+      // Podfile設定後のcunning_document_scanner呼び出し（UI改善設定）
       List<String> pictures = await CunningDocumentScanner.getPictures() ?? [];
       
       if (kDebugMode) {
@@ -42,7 +42,10 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         setState(() {
           _scannedImages.addAll(pictures);
         });
-        _showResultDialog('基本スキャン完了', '${pictures.length}枚の画像を取得しました！🎉');
+        _showResultDialog(
+          '基本スキャン完了 🎉', 
+          '${pictures.length}枚の画像を取得しました！\n\n💡 コツ：\n• Manualモードで角をタップして微調整\n• 「Done」ボタンでスキャン完了\n• 複数ページは「+」ボタンで追加'
+        );
       } else if (mounted) {
         _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。キャンセルされた可能性があります。');
       }
@@ -272,12 +275,12 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
     setState(() => _isScanning = true);
     
     try {
-      List<String> pictures = await CunningDocumentScanner.getPictures(
+      List<String>? pictures = await CunningDocumentScanner.getPictures(
         isGalleryImportAllowed: true,  // ギャラリー選択許可
         noOfPages: 5,                  // 最大5ページ
       ) ?? [];
       
-      if (pictures.isNotEmpty && mounted) {
+      if (pictures != null && pictures.isNotEmpty && mounted) {
         setState(() {
           _scannedImages.addAll(pictures);
         });
@@ -575,9 +578,27 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '🔍 スキャンオプション',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '🔍 スキャンオプション',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: const Text(
+                    '💡 使い方：カメラ起動後、画面右上の「Manual」をタップ → 4つの角を調整 → 「Done」で完了',
+                    style: TextStyle(fontSize: 12, color: Colors.blue),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             
@@ -596,7 +617,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
               ),
             ),
             const Text(
-              '自動エッジ検出 + 透視変換のベーシック機能',
+              '自動エッジ検出 + 透視変換のベーシック機能\n推奨：カメラ起動後に「Manual」タップで精度UP',
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             
