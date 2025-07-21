@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'image_preview_screen.dart';
 
@@ -17,121 +16,6 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   List<String> _scannedImages = [];
   bool _isScanning = false;
 
-  /// 権限の現在状態を確認
-  Future<void> _checkCurrentPermissions() async {
-    if (kDebugMode) {
-      print('=== 権限状態確認 ===');
-      
-      List<Permission> allPermissions = [
-        Permission.camera,
-        Permission.photos,
-        Permission.storage,
-        Permission.microphone,
-      ];
-      
-      for (Permission permission in allPermissions) {
-        PermissionStatus status = await permission.status;
-        print('${permission.toString()}: $status');
-      }
-      
-      print('=====================');
-    }
-  }
-
-  /// 権限をチェックしてリクエスト
-  Future<bool> _checkAndRequestPermissions() async {
-    await _checkCurrentPermissions();
-    
-    // iOS/Android で異なる権限をリクエスト
-    List<Permission> requiredPermissions = [];
-    
-    if (Platform.isIOS) {
-      requiredPermissions = [
-        Permission.camera,
-        Permission.photos,
-      ];
-    } else if (Platform.isAndroid) {
-      requiredPermissions = [
-        Permission.camera,
-        Permission.storage,
-        Permission.photos,
-      ];
-    }
-
-    // 現在の権限状態を確認
-    Map<Permission, PermissionStatus> currentStatus = {};
-    for (Permission permission in requiredPermissions) {
-      currentStatus[permission] = await permission.status;
-    }
-
-    if (kDebugMode) {
-      print('権限リクエスト前の状態: $currentStatus');
-    }
-
-    // 必要な権限のみリクエスト
-    List<Permission> needsRequest = [];
-    for (Permission permission in requiredPermissions) {
-      PermissionStatus status = currentStatus[permission]!;
-      if (status != PermissionStatus.granted) {
-        needsRequest.add(permission);
-      }
-    }
-
-    if (needsRequest.isEmpty) {
-      if (kDebugMode) {
-        print('すべての権限が既に許可されています');
-      }
-      return true;
-    }
-
-    if (kDebugMode) {
-      print('リクエストが必要な権限: $needsRequest');
-    }
-
-    Map<Permission, PermissionStatus> permissions = await needsRequest.request();
-
-    if (kDebugMode) {
-      print('権限リクエスト後の結果: $permissions');
-    }
-
-    bool allGranted = permissions.values.every(
-      (status) => status == PermissionStatus.granted,
-    );
-
-    if (!allGranted) {
-      if (mounted) {
-        // 拒否された権限の詳細を表示
-        List<String> deniedPermissions = [];
-        bool hasPermanentlyDenied = false;
-        
-        permissions.forEach((permission, status) {
-          if (status != PermissionStatus.granted) {
-            if (status == PermissionStatus.permanentlyDenied) {
-              hasPermanentlyDenied = true;
-            }
-            
-            switch (permission) {
-              case Permission.camera:
-                deniedPermissions.add('カメラ');
-                break;
-              case Permission.photos:
-                deniedPermissions.add('フォトライブラリ');
-                break;
-              case Permission.storage:
-                deniedPermissions.add('ストレージ');
-                break;
-              default:
-                deniedPermissions.add(permission.toString());
-            }
-          }
-        });
-
-        _showPermissionDialog(deniedPermissions, hasPermanentlyDenied);
-      }
-    }
-
-    return allGranted;
-  }
 
   /// 基本スキャン（自動エッジ検出 + 透視変換）
   Future<void> _scanBasic() async {
@@ -224,11 +108,13 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
                     children: [
                       Icon(Icons.psychology, color: Colors.amber.shade700, size: 16),
                       const SizedBox(width: 6),
-                      Text(
-                        '技術的解決策',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.amber.shade700,
+                      Expanded(
+                        child: Text(
+                          '技術的解決策',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber.shade700,
+                          ),
                         ),
                       ),
                     ],
@@ -244,9 +130,29 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '現在、既存のカメラ機能は正常に動作しているため、Document Scanner実験は一時的に保留とし、本来の機能をご利用ください。',
-              style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                border: Border.all(color: Colors.green.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info, color: Colors.green.shade700, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '既存のカメラ機能は正常動作中です。Document Scanner実験は技術的課題により一時保留とします。',
+                      style: TextStyle(
+                        fontSize: 13, 
+                        color: Colors.green.shade700,
+                        fontStyle: FontStyle.italic
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -272,114 +178,6 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
     );
   }
 
-  /// すべての可能性のある権限を確認
-  Future<bool> _ensureAllPermissions() async {
-    List<Permission> allPossiblePermissions = [];
-    
-    if (Platform.isIOS) {
-      allPossiblePermissions = [
-        Permission.camera,
-        Permission.photos,
-        Permission.photosAddOnly,
-      ];
-    } else {
-      allPossiblePermissions = [
-        Permission.camera,
-        Permission.storage,
-        Permission.photos,
-        Permission.mediaLibrary,
-      ];
-    }
-    
-    for (Permission permission in allPossiblePermissions) {
-      PermissionStatus status = await permission.status;
-      if (kDebugMode) {
-        print('権限 ${permission}: $status');
-      }
-      
-      if (status == PermissionStatus.denied) {
-        PermissionStatus newStatus = await permission.request();
-        if (kDebugMode) {
-          print('権限リクエスト後 ${permission}: $newStatus');
-        }
-      }
-    }
-    
-    return true;
-  }
-
-  /// 権限問題を診断
-  Future<void> _diagnosePermissionIssue() async {
-    if (kDebugMode) {
-      print('=== 権限問題診断 ===');
-      
-      List<Permission> permissions = [
-        Permission.camera,
-        Permission.photos,
-        Permission.photosAddOnly,
-        Permission.storage,
-        Permission.mediaLibrary,
-      ];
-      
-      for (Permission permission in permissions) {
-        try {
-          PermissionStatus status = await permission.status;
-          bool isGranted = await permission.isGranted;
-          bool isDenied = await permission.isDenied;
-          bool isRestricted = await permission.isRestricted;
-          bool isPermanentlyDenied = await permission.isPermanentlyDenied;
-          
-          print('$permission:');
-          print('  status: $status');
-          print('  isGranted: $isGranted');
-          print('  isDenied: $isDenied');
-          print('  isRestricted: $isRestricted');
-          print('  isPermanentlyDenied: $isPermanentlyDenied');
-        } catch (e) {
-          print('$permission: エラー $e');
-        }
-      }
-      print('==================');
-    }
-  }
-
-  /// 権限を強制的にリクエスト  
-  Future<void> _forceRequestPermissions() async {
-    if (kDebugMode) {
-      print('=== 強制権限リクエスト開始 ===');
-    }
-    
-    List<Permission> permissions = [
-      Permission.camera,
-      Permission.photos,
-      Permission.photosAddOnly,
-    ];
-    
-    for (Permission permission in permissions) {
-      if (kDebugMode) {
-        print('${permission} をリクエスト中...');
-      }
-      
-      try {
-        PermissionStatus status = await permission.request();
-        if (kDebugMode) {
-          print('${permission} リクエスト結果: $status');
-        }
-        
-        // 少し待機してから次の権限をリクエスト
-        await Future.delayed(const Duration(milliseconds: 500));
-      } catch (e) {
-        if (kDebugMode) {
-          print('${permission} リクエストエラー: $e');
-        }
-      }
-    }
-    
-    if (kDebugMode) {
-      print('=== 強制権限リクエスト完了 ===');
-      await _checkCurrentPermissions();
-    }
-  }
 
   /// 再試行確認ダイアログ
   Future<bool> _showRetryDialog() async {
