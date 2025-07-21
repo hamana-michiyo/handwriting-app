@@ -316,7 +316,7 @@ class SupabaseOCRProcessor:
                     # char_key (char_1, char_2, char_3) → ml_char_1, ml_char_2, ml_char_3 に変換
                     char_key_to_ml_file = {"char_1": "ml_char_1", "char_2": "ml_char_2", "char_3": "ml_char_3"}
                     ml_file_name = char_key_to_ml_file.get(char_key, f"ml_{char_key}")
-                    ml_image_path = f"/workspace/debug/ml_training_{ml_file_name}.jpg"
+                    ml_image_path = f"/workspace/debug/{ml_file_name}.jpg"
                     if os.path.exists(ml_image_path):
                         with open(ml_image_path, 'rb') as f:
                             image_bytes = f.read()

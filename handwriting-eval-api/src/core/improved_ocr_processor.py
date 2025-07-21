@@ -450,9 +450,9 @@ class ImprovedOCRProcessor:
                 cleaned_region = region_image
                 logger.info(f"{name}文字領域: お手本のため補助線除去をスキップ")
             
-            # デバッグ保存（処理後画像）
+            # お手本画像保存（常に保存：Gemini認識用）
             char_file = self.debug_dir / f"improved_char_{name}.jpg"
-            self._save_debug_image(cleaned_region, str(char_file), debug)
+            cv2.imwrite(str(char_file), cleaned_region)
             logger.info(f"{name}文字領域保存（お手本用）: {char_file}")
             
             # Gemini文字認識（お手本画像を直接使用）
@@ -483,25 +483,44 @@ class ImprovedOCRProcessor:
         H, W = gray.shape
         
         # 文字セル検出（detect_char_cellsと同じロジック）
-        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+        th = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 15, 8)
         kernel = np.ones((3, 3), np.uint8)
-        binary = cv2.dilate(binary, kernel, iterations=1)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        th = cv2.dilate(th, kernel, iterations=1)
+        cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         cand = []
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            area = w * h
-            aspect = w / h
+        for c in cnts:
+            area = cv2.contourArea(c)
+            # より厳しい面積制限（文字セルサイズに合わせる）
+            min_area = (H * W) * 0.005  # 0.002 → 0.005 (より大きな下限)
+            max_area = (H * W) * 0.015  # 0.03 → 0.015 (より小さな上限)
             
-            # 厳密な文字セルフィルタ（同じ条件）
-            if (area / (H * W) >= 0.005 and area / (H * W) <= 0.015 and
-                0.9 <= aspect <= 1.1 and
-                cv2.arcLength(cnt, True) > W * 0.08 and cv2.arcLength(cnt, True) < W * 0.25):
-                eps = 0.02 * cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, eps, True)
-                if len(approx) >= 4 and len(approx) <= 6:
-                    cand.append((x, y, w, h))
+            if area < min_area or area > max_area:
+                continue
+            
+            # 輪郭の複雑さチェック
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.015 * peri, True)  # より厳密な近似
+            
+            # 4角形またはそれに近い形状
+            if len(approx) < 4 or len(approx) > 6:
+                continue
+            
+            x, y, w, h = cv2.boundingRect(approx)
+            
+            # より厳しい正方形判定
+            aspect_ratio = w / h
+            if not (0.9 < aspect_ratio < 1.1):  # 0.85-1.15 → 0.9-1.1
+                continue
+            
+            # サイズの妥当性チェック（文字セルとして適切なサイズか）
+            min_size = min(H, W) * 0.08  # 最小サイズ
+            max_size = min(H, W) * 0.25  # 最大サイズ
+            
+            if not (min_size < w < max_size and min_size < h < max_size):
+                continue
+                
+            cand.append((x, y, w, h))
         
         if len(cand) < 6:
             logger.warning(f"機械学習用：文字セル候補が不足 ({len(cand)}/6)")
@@ -537,9 +556,9 @@ class ImprovedOCRProcessor:
             cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name, debug=debug)
             logger.info(f"{name}文字領域: 機械学習用補助線除去処理を適用")
             
-            # 機械学習用データとして保存
-            char_file = self.debug_dir / f"ml_training_{name}.jpg"
-            self._save_debug_image(cleaned_region, str(char_file), debug)
+            # 機械学習用データとして保存（常に保存：重要なデータ）
+            char_file = self.debug_dir / f"{name}.jpg"
+            cv2.imwrite(str(char_file), cleaned_region)
             logger.info(f"機械学習用文字領域保存: {char_file}")
             
             character_results[name] = {
@@ -557,29 +576,11 @@ class ImprovedOCRProcessor:
         """軽い照明ムラ補正処理"""
         #CLAHEだと紙面に凹凸などが強調されてノイズになったので方式を変更
         try:
-            if len(image.shape) == 3:
-                enhanced = cv2.convertScaleAbs(image, alpha=1.2, beta=-3)
-                # カラー画像の場合は、各チャンネルに同じ補正を適用
-                #channels = cv2.split(enhanced)
-                #corrected_channels = []
-                
-                #for channel in channels:
-                #    # 軽いCLAHE (より控えめなパラメータ)
-                #    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
-                #    enhanced2 = clahe.apply(channel)
-                #    corrected_channels.append(enhanced2)
-                #return cv2.merge(corrected_channels)
-                return enhanced
-            
-            else:
-                # グレースケール画像
-                gray = image.copy()
-                enhanced = cv2.convertScaleAbs(gray, alpha=1.2, beta=-3)
-                # 軽いCLAHE適用
-                #clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
-                #enhanced2 = clahe.apply(gray)
-
-                return enhanced
+            median_intensity = np.median(image)
+            alpha = 1.2 if median_intensity < 120 else 1.0
+            beta  = -10 if median_intensity < 120 else -3
+            enhanced = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+            return enhanced
             
         except Exception as e:
             logger.warning(f"照明補正エラー: {e}")
@@ -623,7 +624,10 @@ class ImprovedOCRProcessor:
                 gray = image.copy() 
             # 画像の中央値に基づく動的なコントラスト調整
             median_intensity = np.median(gray)
-            alpha = 1.2 if median_intensity < 120 else 1.0
+            print(f"Median intensity for contrast adjustment: {median_intensity}")
+            # alpha, beta の値を中央値に基づいて調整
+            # 120未満なら強めのコントラスト、120以上なら通常
+            alpha = 1.2 if median_intensity < 120 else 1.1
             beta  = -10 if median_intensity < 120 else -3
             enhanced = cv2.convertScaleAbs(gray, alpha=alpha, beta=beta)
             blur = cv2.GaussianBlur(enhanced, (3, 3), 0)
@@ -663,16 +667,6 @@ class ImprovedOCRProcessor:
             # デバッグ保存（複数ステップ）
             if save_debug and debug_name and self.debug_dir:
                 debug_file = self.debug_dir / f"guideline_removed_{debug_name}.jpg"
-                enhanced_file = self.debug_dir / f"enhanced_{debug_name}.jpg"
-                dbg_thin_file = self.debug_dir / f"dbg_thin_{debug_name}.jpg"
-                dbg_guide_file = self.debug_dir / f"dbg_guide_{debug_name}.jpg"
-                dbg_inpaint_file = self.debug_dir / f"dbg_inpaint_{debug_name}.jpg"
-                
-                # Note: these variables (thin, guide, inpainted) are not defined in the current code
-                # self._save_debug_image(thin, str(dbg_thin_file), debug and save_debug)
-                # self._save_debug_image(guide, str(dbg_guide_file), debug and save_debug)
-                # self._save_debug_image(inpainted, str(dbg_inpaint_file), debug and save_debug)
-
                 self._save_debug_image(result, str(debug_file), debug and save_debug)
                 #self._save_debug_image(enhanced, str(enhanced_file), debug and save_debug)
                 logger.info(f"改良補助線除去結果保存: {debug_file}")
