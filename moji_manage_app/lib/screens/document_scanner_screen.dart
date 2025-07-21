@@ -284,7 +284,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         setState(() {
           _scannedImages.addAll(pictures);
         });
-        _showResultDialog('高品質スキャン完了', '${pictures.length}枚の高品質画像を取得しました');
+        _showResultDialog('複数ページスキャン完了', '${pictures.length}枚の画像を取得しました（最大5ページ対応）');
       } else if (mounted) {
         _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。もう一度お試しください。');
       }
@@ -629,7 +629,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
               child: ElevatedButton.icon(
                 onPressed: _scanHighQuality,
                 icon: const Icon(Icons.high_quality),
-                label: const Text('高品質スキャン'),
+                label: const Text('複数ページスキャン'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
@@ -638,7 +638,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
               ),
             ),
             const Text(
-              '画質向上フィルタ + 複数ページ対応（最大5ページ）',
+              'ギャラリー選択可能 + 複数ページ対応（最大5ページ）\n※画質は基本スキャンと同等',
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             
