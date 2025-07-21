@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'image_preview_screen.dart';
 
@@ -241,26 +242,25 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
             child: const Text('キャンセル'),
           ),
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.of(context).pop(false);
-              await openAppSettings();
+              // iOS設定は手動で開いてもらう
             },
-            child: const Text('設定を開く'),
+            child: const Text('手動で設定'),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.of(context).pop(false);
-              await _forceRequestPermissions();
-              // 権限取得後に自動的に再試行
+              // Podfile設定後は直接スキャン再試行
               if (mounted) {
-                await _scanBasic();
+                _scanBasic();
               }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
             ),
-            child: const Text('権限を再取得'),
+            child: const Text('再試行'),
           ),
         ],
       ),
@@ -480,12 +480,12 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
             child: const Text('キャンセル'),
           ),
           ElevatedButton.icon(
-            onPressed: () async {
+            onPressed: () {
               Navigator.of(context).pop();
-              await openAppSettings(); // 設定アプリを開く
+              // iOS設定は手動で開いてもらう
             },
             icon: const Icon(Icons.settings),
-            label: const Text('設定を開く'),
+            label: const Text('iOS設定へ'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
