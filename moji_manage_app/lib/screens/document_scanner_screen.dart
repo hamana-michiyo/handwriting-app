@@ -17,8 +17,31 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   List<String> _scannedImages = [];
   bool _isScanning = false;
 
+  /// 権限の現在状態を確認
+  Future<void> _checkCurrentPermissions() async {
+    if (kDebugMode) {
+      print('=== 権限状態確認 ===');
+      
+      List<Permission> allPermissions = [
+        Permission.camera,
+        Permission.photos,
+        Permission.storage,
+        Permission.microphone,
+      ];
+      
+      for (Permission permission in allPermissions) {
+        PermissionStatus status = await permission.status;
+        print('${permission.toString()}: $status');
+      }
+      
+      print('=====================');
+    }
+  }
+
   /// 権限をチェックしてリクエスト
   Future<bool> _checkAndRequestPermissions() async {
+    await _checkCurrentPermissions();
+    
     // iOS/Android で異なる権限をリクエスト
     List<Permission> requiredPermissions = [];
     
@@ -35,7 +58,41 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
       ];
     }
 
-    Map<Permission, PermissionStatus> permissions = await requiredPermissions.request();
+    // 現在の権限状態を確認
+    Map<Permission, PermissionStatus> currentStatus = {};
+    for (Permission permission in requiredPermissions) {
+      currentStatus[permission] = await permission.status;
+    }
+
+    if (kDebugMode) {
+      print('権限リクエスト前の状態: $currentStatus');
+    }
+
+    // 必要な権限のみリクエスト
+    List<Permission> needsRequest = [];
+    for (Permission permission in requiredPermissions) {
+      PermissionStatus status = currentStatus[permission]!;
+      if (status != PermissionStatus.granted) {
+        needsRequest.add(permission);
+      }
+    }
+
+    if (needsRequest.isEmpty) {
+      if (kDebugMode) {
+        print('すべての権限が既に許可されています');
+      }
+      return true;
+    }
+
+    if (kDebugMode) {
+      print('リクエストが必要な権限: $needsRequest');
+    }
+
+    Map<Permission, PermissionStatus> permissions = await needsRequest.request();
+
+    if (kDebugMode) {
+      print('権限リクエスト後の結果: $permissions');
+    }
 
     bool allGranted = permissions.values.every(
       (status) => status == PermissionStatus.granted,
@@ -78,11 +135,34 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
   /// 基本スキャン（自動エッジ検出 + 透視変換）
   Future<void> _scanBasic() async {
+    if (kDebugMode) {
+      print('=== 基本スキャン開始 ===');
+      await _checkCurrentPermissions();
+    }
+    
     setState(() => _isScanning = true);
     
     try {
-      // まず権限チェックなしで試行
+      // cunning_document_scannerが要求する可能性のある権限を事前チェック
+      bool permissionGranted = await _ensureAllPermissions();
+      
+      if (!permissionGranted) {
+        if (kDebugMode) {
+          print('事前権限チェック失敗');
+        }
+        return;
+      }
+      
+      if (kDebugMode) {
+        print('cunning_document_scanner呼び出し開始');
+      }
+      
       List<String> pictures = await CunningDocumentScanner.getPictures() ?? [];
+      
+      if (kDebugMode) {
+        print('cunning_document_scanner結果: ${pictures.length}枚');
+      }
+      
       if (pictures.isNotEmpty && mounted) {
         setState(() {
           _scannedImages.addAll(pictures);
@@ -95,16 +175,21 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
       if (kDebugMode) {
         print('基本スキャンエラー詳細: $e');
         print('エラータイプ: ${e.runtimeType}');
+        print('スタックトレース: ${StackTrace.current}');
       }
       
-      // 権限エラーの場合のみ権限チェックを実行
+      // 権限エラーの場合は追加の権限取得を試行
       if (e.toString().contains('permission') || e.toString().contains('Permission')) {
         setState(() => _isScanning = false);
-        if (!await _checkAndRequestPermissions()) {
-          return;
+        
+        // より詳細な権限診断
+        await _diagnosePermissionIssue();
+        
+        bool retryPermission = await _showRetryDialog();
+        if (retryPermission && mounted) {
+          // 再試行
+          await _scanBasic();
         }
-        // 権限取得後に再試行
-        await _scanBasic();
       } else {
         _showErrorDialog('基本スキャン失敗', 'エラー: ${e.toString()}\n\nデバッグ情報: ${e.runtimeType}');
       }
@@ -113,6 +198,101 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         setState(() => _isScanning = false);
       }
     }
+  }
+
+  /// すべての可能性のある権限を確認
+  Future<bool> _ensureAllPermissions() async {
+    List<Permission> allPossiblePermissions = [];
+    
+    if (Platform.isIOS) {
+      allPossiblePermissions = [
+        Permission.camera,
+        Permission.photos,
+        Permission.photosAddOnly,
+      ];
+    } else {
+      allPossiblePermissions = [
+        Permission.camera,
+        Permission.storage,
+        Permission.photos,
+        Permission.mediaLibrary,
+      ];
+    }
+    
+    for (Permission permission in allPossiblePermissions) {
+      PermissionStatus status = await permission.status;
+      if (kDebugMode) {
+        print('権限 ${permission}: $status');
+      }
+      
+      if (status == PermissionStatus.denied) {
+        PermissionStatus newStatus = await permission.request();
+        if (kDebugMode) {
+          print('権限リクエスト後 ${permission}: $newStatus');
+        }
+      }
+    }
+    
+    return true;
+  }
+
+  /// 権限問題を診断
+  Future<void> _diagnosePermissionIssue() async {
+    if (kDebugMode) {
+      print('=== 権限問題診断 ===');
+      
+      List<Permission> permissions = [
+        Permission.camera,
+        Permission.photos,
+        Permission.photosAddOnly,
+        Permission.storage,
+        Permission.mediaLibrary,
+      ];
+      
+      for (Permission permission in permissions) {
+        try {
+          PermissionStatus status = await permission.status;
+          bool isGranted = await permission.isGranted;
+          bool isDenied = await permission.isDenied;
+          bool isRestricted = await permission.isRestricted;
+          bool isPermanentlyDenied = await permission.isPermanentlyDenied;
+          
+          print('$permission:');
+          print('  status: $status');
+          print('  isGranted: $isGranted');
+          print('  isDenied: $isDenied');
+          print('  isRestricted: $isRestricted');
+          print('  isPermanentlyDenied: $isPermanentlyDenied');
+        } catch (e) {
+          print('$permission: エラー $e');
+        }
+      }
+      print('==================');
+    }
+  }
+
+  /// 再試行確認ダイアログ
+  Future<bool> _showRetryDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('権限エラー'),
+        content: const Text(
+          'Document Scannerが権限エラーを報告しています。\n\n'
+          'システム設定で権限を確認した後、もう一度試しますか？'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('再試行'),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 
   /// 高品質スキャン（全フィルタ適用）
