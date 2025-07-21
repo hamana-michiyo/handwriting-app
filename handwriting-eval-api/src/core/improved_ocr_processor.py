@@ -474,27 +474,30 @@ class ImprovedOCRProcessor:
     
     def apply_lighting_correction(self, image: np.ndarray) -> np.ndarray:
         """軽い照明ムラ補正処理"""
+        #CLAHEだと紙面に凹凸などが強調されてノイズになったので方式を変更
         try:
             if len(image.shape) == 3:
+                enhanced = cv2.convertScaleAbs(image, alpha=1.2, beta=-3)
                 # カラー画像の場合は、各チャンネルに同じ補正を適用
-                channels = cv2.split(image)
-                corrected_channels = []
+                #channels = cv2.split(enhanced)
+                #corrected_channels = []
                 
-                for channel in channels:
-                    # 軽いCLAHE (より控えめなパラメータ)
-                    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
-                    enhanced = clahe.apply(channel)
-                    corrected_channels.append(enhanced)
-                
-                return cv2.merge(corrected_channels)
+                #for channel in channels:
+                #    # 軽いCLAHE (より控えめなパラメータ)
+                #    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
+                #    enhanced2 = clahe.apply(channel)
+                #    corrected_channels.append(enhanced2)
+                #return cv2.merge(corrected_channels)
+                return enhanced
+            
             else:
                 # グレースケール画像
                 gray = image.copy()
-                
+                enhanced = cv2.convertScaleAbs(gray, alpha=1.2, beta=-3)
                 # 軽いCLAHE適用
-                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
-                enhanced = clahe.apply(gray)
-                
+                #clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(16, 16))
+                #enhanced2 = clahe.apply(gray)
+
                 return enhanced
             
         except Exception as e:
@@ -830,7 +833,7 @@ class ImprovedOCRProcessor:
                 score_cand.append((X, y, w, h))
                 print(f"点数候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
             # コメント候補: 横長
-            elif ratio > 3.0:  # 3.0に緩和（4.5 → 3.0）
+            elif ratio > 4.0:  # 4.0に緩和（4.5 → 4.0）
                 cmt_cand.append((X, y, w, h))
                 print(f"コメント候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
         
@@ -867,8 +870,8 @@ class ImprovedOCRProcessor:
         if cmt_cand:  # コメント枠がある場合のみフィルタ適用
             cmt_cand = keep_rightmost(cmt_cand)
         
-        # 点数枠候補の平均の幅を計算
-        if len(score_cand) > 0:
+        # 候補が12個以上あるとき点数枠候補の平均の幅を計算
+        if len(score_cand) > 12:
             before_width_filter = len(score_cand)
             # 幅の平均を計算して、外れ値を除去
             #avg_w = sum(b[2] for b in score_cand) / len(score_cand)
@@ -885,7 +888,7 @@ class ImprovedOCRProcessor:
                 print(f"幅が均一（IQR=0）のため、全ての候補を残します")
                 lo, hi = min(widths) - 1, max(widths) + 1
             else:
-                lo, hi   = q1 - 1.5*iqr, q3 + 1.5*iqr      # 外れ値しきい
+                lo, hi   = q1 - max(1.5*iqr, 1), q3 + max(1.5*iqr , 1)     # 外れ値しきい
             print(f"幅の外れ値しきい: {lo:.1f} - {hi:.1f} px")
             score_cand = [b for b in score_cand if lo <= b[2] <= hi]
             print(f"幅フィルタ前: {before_width_filter}個, 幅フィルタ後: {len(score_cand)}個")
@@ -1058,6 +1061,7 @@ def main():
         #results = processor.process_form("docs/記入sample.JPG", debug=True)
         # DEV_MODE環境変数からデバッグモードを決定
         debug_mode = os.getenv('DEV_MODE', 'false').lower() == 'true'
+        # ファイルから読み込み
         results = processor.process_form("debug/original_input.jpg", debug=debug_mode)
 
         print("\n=== 改良版処理結果（page_split.py統合 + Gemini認識） ===")

@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>手書き文字をカメラで撮影して評価するために使用します</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>保存された画像から手書き文字を読み込むために使用します</string>
+
 </dict>
 </plist>
