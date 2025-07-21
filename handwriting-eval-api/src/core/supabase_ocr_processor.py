@@ -148,6 +148,7 @@ class SupabaseOCRProcessor:
                 "writer_grade": writer_grade,
                 "processing_timestamp": datetime.now().isoformat(),
                 "character_results": [],
+                "ml_training_data": [],
                 "number_results": [],
                 "supabase_saved": False
             }
@@ -162,6 +163,15 @@ class SupabaseOCRProcessor:
                     writer_number, writer_age, writer_grade, auto_save, evaluation_scores
                 )
                 results["character_results"] = char_results
+            
+            # 機械学習用データ処理（右側・補助線除去済み）
+            if "ml_training_data" in ocr_results and ocr_results["ml_training_data"]:
+                ml_results = self._process_ml_training_data(
+                    ocr_results["ml_training_data"],
+                    writer_number, writer_age, writer_grade, auto_save
+                )
+                results["ml_training_data"] = ml_results
+                logger.info(f"機械学習用データ処理完了: {len(ml_results)}個")
             
             # 数字認識結果処理
             if "writer_number" in ocr_results or "number_results" in ocr_results:
@@ -298,20 +308,31 @@ class SupabaseOCRProcessor:
                     logger.warning(f"No Gemini result for {char_key}")
                     continue
                 
-                # 補助線除去済み画像データを準備（ストレージ保存用）
+                # 機械学習用画像データを準備（ストレージ保存用・補助線除去済み）
                 image_bytes = None
                 image_array = None
                 try:
-                    # デバッグディレクトリから補助線除去済み画像を読み込み
-                    cleaned_image_path = f"/workspace/debug/improved_char_{char_key}.jpg"
-                    if os.path.exists(cleaned_image_path):
-                        with open(cleaned_image_path, 'rb') as f:
+                    # まず右側機械学習用データ（補助線除去済み）を優先して取得
+                    # char_key (char_1, char_2, char_3) → ml_char_1, ml_char_2, ml_char_3 に変換
+                    char_key_to_ml_file = {"char_1": "ml_char_1", "char_2": "ml_char_2", "char_3": "ml_char_3"}
+                    ml_file_name = char_key_to_ml_file.get(char_key, f"ml_{char_key}")
+                    ml_image_path = f"/workspace/debug/ml_training_{ml_file_name}.jpg"
+                    if os.path.exists(ml_image_path):
+                        with open(ml_image_path, 'rb') as f:
                             image_bytes = f.read()
                         # 画像配列も読み込み（shape情報取得用）
-                        image_array = cv2.imread(cleaned_image_path)
-                        logger.info(f"補助線除去済み画像を使用: {cleaned_image_path}")
+                        image_array = cv2.imread(ml_image_path)
+                        logger.info(f"機械学習用画像（補助線除去済み）を使用: {ml_image_path}")
                     else:
-                        logger.warning(f"補助線除去済み画像が見つかりません: {cleaned_image_path}")
+                        # フォールバック: 左側お手本画像（補助線除去なし）
+                        cleaned_image_path = f"/workspace/debug/improved_char_{char_key}.jpg"
+                        if os.path.exists(cleaned_image_path):
+                            with open(cleaned_image_path, 'rb') as f:
+                                image_bytes = f.read()
+                            image_array = cv2.imread(cleaned_image_path)
+                            logger.warning(f"フォールバック: お手本画像を使用（補助線除去なし）: {cleaned_image_path}")
+                        else:
+                            logger.warning(f"どちらの画像も見つかりません - ML: {ml_image_path}, お手本: {cleaned_image_path}")
                         # フォールバック処理の場合は元画像データを使用
                         if "image" in char_data:
                             image_array = char_data["image"]
@@ -400,6 +421,112 @@ class SupabaseOCRProcessor:
                 })
         
         return character_results
+    
+    def _process_ml_training_data(self, ml_data: Dict[str, Any], 
+                                writer_number: str, writer_age: int, writer_grade: str,
+                                auto_save: bool) -> List[Dict[str, Any]]:
+        """
+        機械学習用データ処理（右側文字領域・補助線除去済み）
+        
+        Args:
+            ml_data: 機械学習用データ
+            writer_number: 記入者番号
+            writer_age: 記入者年齢
+            writer_grade: 記入者学年
+            auto_save: 自動保存フラグ
+            
+        Returns:
+            処理済み機械学習データリスト
+        """
+        ml_results = []
+        
+        for ml_key, ml_char_data in ml_data.items():
+            try:
+                # 補助線除去済み画像データを準備
+                image_bytes = None
+                image_array = None
+                
+                try:
+                    # 機械学習用画像パスを取得
+                    ml_image_path = f"/workspace/debug/ml_training_{ml_key}.jpg"
+                    if os.path.exists(ml_image_path):
+                        with open(ml_image_path, 'rb') as f:
+                            image_bytes = f.read()
+                        # 画像配列も読み込み（shape情報取得用）
+                        image_array = cv2.imread(ml_image_path)
+                        logger.info(f"機械学習用画像を使用: {ml_image_path}")
+                    else:
+                        logger.warning(f"機械学習用画像が見つかりません: {ml_image_path}")
+                        # フォールバック処理：cleaned_imageを使用
+                        if "cleaned_image" in ml_char_data:
+                            image_array = ml_char_data["cleaned_image"]
+                            # numpy配列をJPEGバイトに変換
+                            _, buffer = cv2.imencode('.jpg', image_array)
+                            image_bytes = buffer.tobytes()
+                            logger.info(f"機械学習用フォールバック画像データを使用: {ml_key}")
+                        else:
+                            logger.warning(f"機械学習用フォールバック画像データも見つかりません: {ml_key}")
+                            continue
+                except Exception as e:
+                    logger.error(f"機械学習用画像読み込みエラー: {e}")
+                    continue
+                
+                # 結果構築
+                result = {
+                    "ml_key": ml_key,
+                    "bbox": ml_char_data.get("bbox"),
+                    "purpose": ml_char_data.get("purpose", "machine_learning_training"),
+                    "guideline_removed": ml_char_data.get("guideline_removed", True),
+                    "image_size": image_array.shape if image_array is not None else None,
+                    "saved_to_supabase": False
+                }
+                
+                # Supabase保存（機械学習用データとして）
+                if auto_save and image_bytes:
+                    try:
+                        # 機械学習用データとして保存（文字は仮で設定）
+                        character_name = f"ml_training_{ml_key}"
+                        
+                        # 機械学習データセット専用保存
+                        sample_data = self.supabase.create_writing_sample(
+                            writer_number=f"ml_{writer_number}",
+                            character=character_name,
+                            image_data=image_bytes,
+                            scores=None,  # 機械学習用は評価なし
+                            gemini_result={
+                                "character": character_name,
+                                "confidence": 1.0,
+                                "method": "ml_training_data",
+                                "purpose": "machine_learning_training",
+                                "guideline_removed": True
+                            },
+                            writer_age=writer_age,
+                            writer_grade=writer_grade,
+                            allow_duplicates=True  # 機械学習用は重複許可
+                        )
+                        
+                        result["sample_id"] = sample_data["id"]
+                        result["image_path"] = sample_data.get("image_path")
+                        result["saved_to_supabase"] = True
+                        result["action"] = sample_data.get("action", "created")
+                        
+                        logger.info(f"機械学習用データ保存完了: {character_name} (ID: {sample_data['id']})")
+                        
+                    except Exception as e:
+                        logger.error(f"機械学習用データ保存エラー: {e}")
+                        result["save_error"] = str(e)
+                
+                ml_results.append(result)
+                
+            except Exception as e:
+                logger.error(f"機械学習データ処理エラー ({ml_key}): {e}")
+                ml_results.append({
+                    "ml_key": ml_key,
+                    "error": str(e),
+                    "saved_to_supabase": False
+                })
+        
+        return ml_results
     
     def _process_number_results(self, ocr_results: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
