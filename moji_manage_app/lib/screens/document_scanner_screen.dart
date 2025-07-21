@@ -136,27 +136,18 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   /// 基本スキャン（自動エッジ検出 + 透視変換）
   Future<void> _scanBasic() async {
     if (kDebugMode) {
-      print('=== 基本スキャン開始 ===');
-      await _checkCurrentPermissions();
+      print('=== 基本スキャン開始（権限チェックなし版） ===');
     }
     
     setState(() => _isScanning = true);
     
     try {
-      // cunning_document_scannerが要求する可能性のある権限を事前チェック
-      bool permissionGranted = await _ensureAllPermissions();
-      
-      if (!permissionGranted) {
-        if (kDebugMode) {
-          print('事前権限チェック失敗');
-        }
-        return;
-      }
-      
       if (kDebugMode) {
-        print('cunning_document_scanner呼び出し開始');
+        print('cunning_document_scanner直接呼び出し（権限チェックスキップ）');
       }
       
+      // 権限チェックをスキップして直接cunning_document_scannerを呼び出し
+      // (cunning_document_scannerが内部でiOS標準権限システムを使用することを期待)
       List<String> pictures = await CunningDocumentScanner.getPictures() ?? [];
       
       if (kDebugMode) {
@@ -167,9 +158,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         setState(() {
           _scannedImages.addAll(pictures);
         });
-        _showResultDialog('基本スキャン完了', '${pictures.length}枚の画像を取得しました');
+        _showResultDialog('基本スキャン完了', '${pictures.length}枚の画像を取得しました！');
       } else if (mounted) {
-        _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。もう一度お試しください。');
+        _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。キャンセルされた可能性があります。');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -178,18 +169,12 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         print('スタックトレース: ${StackTrace.current}');
       }
       
-      // 権限エラーの場合は追加の権限取得を試行
+      // permission_handlerの問題を回避する特別な対応
       if (e.toString().contains('permission') || e.toString().contains('Permission')) {
         setState(() => _isScanning = false);
         
-        // より詳細な権限診断
-        await _diagnosePermissionIssue();
-        
-        bool retryPermission = await _showRetryDialog();
-        if (retryPermission && mounted) {
-          // 再試行
-          await _scanBasic();
-        }
+        // permission_handlerに頼らない解決策を提示
+        await _showPermissionHandlerIssueDialog();
       } else {
         _showErrorDialog('基本スキャン失敗', 'エラー: ${e.toString()}\n\nデバッグ情報: ${e.runtimeType}');
       }
@@ -198,6 +183,93 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         setState(() => _isScanning = false);
       }
     }
+  }
+
+  /// permission_handlerの問題を説明するダイアログ
+  Future<void> _showPermissionHandlerIssueDialog() async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.bug_report, color: Colors.red),
+            const SizedBox(width: 8),
+            const Text('permission_handlerの問題'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '診断結果：\n'
+              '• 既存カメラアプリ: 正常動作 ✅\n'
+              '• permission_handler: permanentlyDenied ❌\n'
+              '• cunning_document_scanner: permission_handlerに依存\n\n'
+              'これはパッケージ間の権限システム不整合です。',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                border: Border.all(color: Colors.amber.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.psychology, color: Colors.amber.shade700, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        '技術的解決策',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '1. iOS設定でアプリを削除・再インストール\n'
+                    '2. permission_handlerパッケージの更新\n'
+                    '3. 別のdocument scannerライブラリの検討',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '現在、既存のカメラ機能は正常に動作しているため、Document Scanner実験は一時的に保留とし、本来の機能をご利用ください。',
+              style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('理解しました'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              // 既存のカメラ画面に移動
+              Navigator.pop(context); // Document Scanner画面を閉じる
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('既存カメラを使用'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// すべての可能性のある権限を確認
