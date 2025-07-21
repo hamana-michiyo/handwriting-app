@@ -339,19 +339,19 @@ class ImprovedOCRProcessor:
             if len(cand) < 3:
                 raise RuntimeError("課題マスらしき四角が 3 つ見つかりません")
             
-            # 列ごとにグルーピング → 右列を選択
+            # 列ごとにグルーピング → 左列を選択（お手本側）
             xs = np.array([[c[0]] for c in cand], np.float32)
             _, labels, centers = cv2.kmeans(xs, 2, None,
                 (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0),
                 10, cv2.KMEANS_PP_CENTERS)
-            right_cluster = np.argmax(centers)  # x が大きい方
-            right_boxes = [c for c,l in zip(cand, labels.flatten()) if l == right_cluster]
+            left_cluster = np.argmin(centers)  # x が小さい方（お手本側）
+            left_boxes = [c for c,l in zip(cand, labels.flatten()) if l == left_cluster]
             
             # y でソートして上→下 3 つを取得
-            right_boxes = sorted(right_boxes, key=lambda b: b[1])[:3]
+            left_boxes = sorted(left_boxes, key=lambda b: b[1])[:3]
             cells = []
             margin = 10
-            for x, y, w, h in right_boxes:
+            for x, y, w, h in left_boxes:
                 cells.append((x + margin, y + margin, x + w - margin, y + h - margin))
             
             if debug:
@@ -368,14 +368,14 @@ class ImprovedOCRProcessor:
                     cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 3)
                     cv2.putText(dbg, f"Cell{i+1}", (x1+5, y1+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 
-                # 右列のボックスを青で表示
-                for (x, y, w, h) in right_boxes:
+                # 左列のボックスを青で表示（お手本側）
+                for (x, y, w, h) in left_boxes:
                     cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 0, 0), 2)
                 
                 self._save_debug_image(dbg, str(self.debug_dir / "dbg_cells_contour.jpg"), debug)
                 
                 # ログ出力
-                print(f"[文字セル検出] 候補数: {len(cand)}, 右列候補: {len(right_boxes)}, 最終選択: {len(cells)}個")
+                print(f"[文字セル検出] 候補数: {len(cand)}, 左列候補（お手本）: {len(left_boxes)}, 最終選択: {len(cells)}個")
                 for i, (x, y, w, h) in enumerate(cand):
                     area_ratio = (w * h) / (H * W)
                     print(f"  候補{i+1}: ({x},{y}) {w}x{h}, 面積比: {area_ratio:.4f}")
@@ -440,19 +440,22 @@ class ImprovedOCRProcessor:
             name = char_names[i]
             region_image = gray[y1:y2, x1:x2]
             
-            # 補助線除去を適用
-            cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name, debug=debug)
+            # 左側お手本枠では補助線除去をスキップ（お手本は清書で補助線不要）
+            # 右側学習用枠の場合のみ補助線除去を適用
+            if False:  # 現在は左側（お手本）を使用しているため補助線除去不要
+                cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name, debug=debug)
+                logger.info(f"{name}文字領域: 補助線除去処理を適用")
+            else:
+                # 補助線除去なし（お手本は清書のため）
+                cleaned_region = region_image
+                logger.info(f"{name}文字領域: お手本のため補助線除去をスキップ")
             
-            # デバッグ保存（補助線除去前）
-            char_file = self.debug_dir / f"improved_char_{name}_original.jpg"
-            self._save_debug_image(region_image, str(char_file), debug)
+            # デバッグ保存（処理後画像）
+            char_file = self.debug_dir / f"improved_char_{name}.jpg"
+            self._save_debug_image(cleaned_region, str(char_file), debug)
+            logger.info(f"{name}文字領域保存（お手本用）: {char_file}")
             
-            # デバッグ保存（補助線除去後）
-            char_file_cleaned = self.debug_dir / f"improved_char_{name}.jpg"
-            self._save_debug_image(cleaned_region, str(char_file_cleaned), debug)
-            logger.info(f"{name}文字領域保存（補助線除去済み）: {char_file_cleaned}")
-            
-            # Gemini文字認識（補助線除去後の画像を使用）
+            # Gemini文字認識（お手本画像を直接使用）
             gemini_result = self.recognize_character_with_gemini(cleaned_region, name)
             
             character_results[name] = {
@@ -470,6 +473,84 @@ class ImprovedOCRProcessor:
             else:
                 logger.info(f"{name} Gemini認識: 認識失敗")
         
+        return character_results
+    
+    def extract_right_character_regions_for_ml(self, corrected_image: np.ndarray, debug=False) -> Dict:
+        """機械学習用：右側文字領域抽出（補助線除去処理付き）"""
+        logger.info("機械学習用：右側文字領域抽出開始")
+        
+        gray = cv2.cvtColor(corrected_image, cv2.COLOR_BGR2GRAY) if len(corrected_image.shape) == 3 else corrected_image
+        H, W = gray.shape
+        
+        # 文字セル検出（detect_char_cellsと同じロジック）
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+        kernel = np.ones((3, 3), np.uint8)
+        binary = cv2.dilate(binary, kernel, iterations=1)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        cand = []
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            area = w * h
+            aspect = w / h
+            
+            # 厳密な文字セルフィルタ（同じ条件）
+            if (area / (H * W) >= 0.005 and area / (H * W) <= 0.015 and
+                0.9 <= aspect <= 1.1 and
+                cv2.arcLength(cnt, True) > W * 0.08 and cv2.arcLength(cnt, True) < W * 0.25):
+                eps = 0.02 * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, eps, True)
+                if len(approx) >= 4 and len(approx) <= 6:
+                    cand.append((x, y, w, h))
+        
+        if len(cand) < 6:
+            logger.warning(f"機械学習用：文字セル候補が不足 ({len(cand)}/6)")
+            return {}
+        
+        # K-meansで左右分離 → 右列選択（機械学習用）
+        xs = np.array([[c[0]] for c in cand], np.float32)
+        _, labels, centers = cv2.kmeans(xs, 2, None,
+            (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0),
+            10, cv2.KMEANS_PP_CENTERS)
+        right_cluster = np.argmax(centers)  # x が大きい方（機械学習用側）
+        right_boxes = [c for c,l in zip(cand, labels.flatten()) if l == right_cluster]
+        
+        # Y座標でソート → 上から3つ取得
+        right_boxes = sorted(right_boxes, key=lambda b: b[1])[:3]
+        
+        if len(right_boxes) < 3:
+            logger.warning(f"機械学習用：右側文字セルが不足 ({len(right_boxes)}/3)")
+            return {}
+        
+        # 文字領域抽出・補助線除去・保存
+        character_results = {}
+        char_names = ["ml_char_1", "ml_char_2", "ml_char_3"]
+        margin = 10
+        
+        for i, (x, y, w, h) in enumerate(right_boxes):
+            name = char_names[i]
+            x1, y1 = max(0, x + margin), max(0, y + margin)
+            x2, y2 = min(W, x + w - margin), min(H, y + h - margin)
+            region_image = gray[y1:y2, x1:x2]
+            
+            # 右側学習用枠では補助線除去を適用
+            cleaned_region = self.remove_guidelines(region_image, save_debug=True, debug_name=name, debug=debug)
+            logger.info(f"{name}文字領域: 機械学習用補助線除去処理を適用")
+            
+            # 機械学習用データとして保存
+            char_file = self.debug_dir / f"ml_training_{name}.jpg"
+            self._save_debug_image(cleaned_region, str(char_file), debug)
+            logger.info(f"機械学習用文字領域保存: {char_file}")
+            
+            character_results[name] = {
+                "image": region_image,  # 元画像
+                "cleaned_image": cleaned_region,  # 補助線除去後
+                "bbox": (x1, y1, x2, y2),
+                "purpose": "machine_learning_training",
+                "guideline_removed": True
+            }
+        
+        logger.info(f"機械学習用右側文字領域抽出完了: {len(character_results)}個")
         return character_results
     
     def apply_lighting_correction(self, image: np.ndarray) -> np.ndarray:
@@ -1015,8 +1096,11 @@ class ImprovedOCRProcessor:
         corrected_image = self.correct_perspective(original_image, debug=debug)
         self._save_debug_image(corrected_image, str(self.debug_dir / "improved_corrected.jpg"), debug)
         
-        # 文字領域抽出（動的検出）
+        # 文字領域抽出（動的検出）- 左側お手本枠（Gemini認識用）
         character_images = self.extract_character_regions(corrected_image, debug)
+        
+        # 機械学習用：右側文字枠も抽出・保存（補助線除去処理付き）
+        ml_character_images = self.extract_right_character_regions_for_ml(corrected_image, debug)
         
         # 数字・コメント領域抽出とOCR（動的検出）
         number_results = self.extract_number_regions_from_original(original_image, debug)
@@ -1024,7 +1108,8 @@ class ImprovedOCRProcessor:
         # 結果統合
         results = {
             "correction_applied": True,
-            "character_results": character_images,  # Gemini認識結果含む
+            "character_results": character_images,  # Gemini認識結果含む（左側お手本枠）
+            "ml_training_data": ml_character_images,  # 機械学習用データ（右側枠・補助線除去済み）
             "writer_number": number_results["writer_number"],
             "evaluations": number_results["evaluations"],
             "comments": number_results["comments"],
