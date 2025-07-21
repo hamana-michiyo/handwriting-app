@@ -271,24 +271,130 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
     }
   }
 
+  /// 権限を強制的にリクエスト  
+  Future<void> _forceRequestPermissions() async {
+    if (kDebugMode) {
+      print('=== 強制権限リクエスト開始 ===');
+    }
+    
+    List<Permission> permissions = [
+      Permission.camera,
+      Permission.photos,
+      Permission.photosAddOnly,
+    ];
+    
+    for (Permission permission in permissions) {
+      if (kDebugMode) {
+        print('${permission} をリクエスト中...');
+      }
+      
+      try {
+        PermissionStatus status = await permission.request();
+        if (kDebugMode) {
+          print('${permission} リクエスト結果: $status');
+        }
+        
+        // 少し待機してから次の権限をリクエスト
+        await Future.delayed(const Duration(milliseconds: 500));
+      } catch (e) {
+        if (kDebugMode) {
+          print('${permission} リクエストエラー: $e');
+        }
+      }
+    }
+    
+    if (kDebugMode) {
+      print('=== 強制権限リクエスト完了 ===');
+      await _checkCurrentPermissions();
+    }
+  }
+
   /// 再試行確認ダイアログ
   Future<bool> _showRetryDialog() async {
     return await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('権限エラー'),
-        content: const Text(
-          'Document Scannerが権限エラーを報告しています。\n\n'
-          'システム設定で権限を確認した後、もう一度試しますか？'
+        title: Row(
+          children: [
+            const Icon(Icons.warning, color: Colors.orange),
+            const SizedBox(width: 8),
+            const Text('権限の問題'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '診断結果：\n'
+              '• カメラ権限: 拒否\n'
+              '• フォト権限: 拒否\n'
+              '• 既存アプリは動作中\n\n'
+              'これは権限システムの不整合が原因です。',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                border: Border.all(color: Colors.blue.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.lightbulb, color: Colors.blue.shade700, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        '解決方法',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '1. 「権限を再取得」で強制的にiOS権限ダイアログを表示\n'
+                    '2. 「設定を開く」でiOS設定画面へ移動\n'
+                    '3. 両方の権限をオンにしてから再試行',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('キャンセル'),
           ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop(false);
+              await openAppSettings();
+            },
+            child: const Text('設定を開く'),
+          ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('再試行'),
+            onPressed: () async {
+              Navigator.of(context).pop(false);
+              await _forceRequestPermissions();
+              // 権限取得後に自動的に再試行
+              if (mounted) {
+                await _scanBasic();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('権限を再取得'),
           ),
         ],
       ),
