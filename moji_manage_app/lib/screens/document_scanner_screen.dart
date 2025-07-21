@@ -20,18 +20,17 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   /// 基本スキャン（自動エッジ検出 + 透視変換）
   Future<void> _scanBasic() async {
     if (kDebugMode) {
-      print('=== 基本スキャン開始（権限チェックなし版） ===');
+      print('=== 基本スキャン開始（Podfile設定後） ===');
     }
     
     setState(() => _isScanning = true);
     
     try {
       if (kDebugMode) {
-        print('cunning_document_scanner直接呼び出し（権限チェックスキップ）');
+        print('cunning_document_scanner呼び出し（Podfile設定完了後）');
       }
       
-      // 権限チェックをスキップして直接cunning_document_scannerを呼び出し
-      // (cunning_document_scannerが内部でiOS標準権限システムを使用することを期待)
+      // Podfile設定後のcunning_document_scanner呼び出し
       List<String> pictures = await CunningDocumentScanner.getPictures() ?? [];
       
       if (kDebugMode) {
@@ -42,7 +41,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         setState(() {
           _scannedImages.addAll(pictures);
         });
-        _showResultDialog('基本スキャン完了', '${pictures.length}枚の画像を取得しました！');
+        _showResultDialog('基本スキャン完了', '${pictures.length}枚の画像を取得しました！🎉');
       } else if (mounted) {
         _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。キャンセルされた可能性があります。');
       }
@@ -53,11 +52,8 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
         print('スタックトレース: ${StackTrace.current}');
       }
       
-      // permission_handlerの問題を回避する特別な対応
       if (e.toString().contains('permission') || e.toString().contains('Permission')) {
         setState(() => _isScanning = false);
-        
-        // permission_handlerに頼らない解決策を提示
         await _showPermissionHandlerIssueDialog();
       } else {
         _showErrorDialog('基本スキャン失敗', 'エラー: ${e.toString()}\n\nデバッグ情報: ${e.runtimeType}');
