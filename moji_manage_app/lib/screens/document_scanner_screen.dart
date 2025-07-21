@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'image_preview_screen.dart';
 
 /// Cunning Document Scanner実験画面
@@ -15,8 +16,37 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   List<String> _scannedImages = [];
   bool _isScanning = false;
 
+  /// 権限をチェックしてリクエスト
+  Future<bool> _checkAndRequestPermissions() async {
+    Map<Permission, PermissionStatus> permissions = await [
+      Permission.camera,
+      Permission.storage,
+      Permission.photos,
+    ].request();
+
+    bool allGranted = permissions.values.every(
+      (status) => status == PermissionStatus.granted,
+    );
+
+    if (!allGranted) {
+      if (mounted) {
+        _showErrorDialog(
+          '権限が必要です',
+          'カメラとストレージの権限が必要です。設定から権限を有効にしてください。',
+        );
+      }
+    }
+
+    return allGranted;
+  }
+
   /// 基本スキャン（自動エッジ検出 + 透視変換）
   Future<void> _scanBasic() async {
+    // 権限チェック
+    if (!await _checkAndRequestPermissions()) {
+      return;
+    }
+
     setState(() => _isScanning = true);
     
     try {
@@ -36,6 +66,11 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
   /// 高品質スキャン（全フィルタ適用）
   Future<void> _scanHighQuality() async {
+    // 権限チェック
+    if (!await _checkAndRequestPermissions()) {
+      return;
+    }
+
     setState(() => _isScanning = true);
     
     try {
@@ -59,6 +94,11 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
   /// ギャラリーから選択してスキャン
   Future<void> _scanFromGallery() async {
+    // 権限チェック
+    if (!await _checkAndRequestPermissions()) {
+      return;
+    }
+
     setState(() => _isScanning = true);
     
     try {
@@ -82,6 +122,11 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
   /// カメラのみでスキャン（基本スキャンと同じ）
   Future<void> _scanCameraOnly() async {
+    // 権限チェック
+    if (!await _checkAndRequestPermissions()) {
+      return;
+    }
+
     setState(() => _isScanning = true);
     
     try {
