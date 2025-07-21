@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
 import 'image_preview_screen.dart';
 
 /// Cunning Document Scanner実験画面
@@ -77,35 +78,45 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
   /// 基本スキャン（自動エッジ検出 + 透視変換）
   Future<void> _scanBasic() async {
-    // 権限チェック
-    if (!await _checkAndRequestPermissions()) {
-      return;
-    }
-
     setState(() => _isScanning = true);
     
     try {
+      // まず権限チェックなしで試行
       List<String> pictures = await CunningDocumentScanner.getPictures() ?? [];
       if (pictures.isNotEmpty && mounted) {
         setState(() {
           _scannedImages.addAll(pictures);
         });
         _showResultDialog('基本スキャン完了', '${pictures.length}枚の画像を取得しました');
+      } else if (mounted) {
+        _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。もう一度お試しください。');
       }
     } catch (e) {
-      _showErrorDialog('基本スキャン失敗', e.toString());
+      if (kDebugMode) {
+        print('基本スキャンエラー詳細: $e');
+        print('エラータイプ: ${e.runtimeType}');
+      }
+      
+      // 権限エラーの場合のみ権限チェックを実行
+      if (e.toString().contains('permission') || e.toString().contains('Permission')) {
+        setState(() => _isScanning = false);
+        if (!await _checkAndRequestPermissions()) {
+          return;
+        }
+        // 権限取得後に再試行
+        await _scanBasic();
+      } else {
+        _showErrorDialog('基本スキャン失敗', 'エラー: ${e.toString()}\n\nデバッグ情報: ${e.runtimeType}');
+      }
     } finally {
-      setState(() => _isScanning = false);
+      if (_isScanning) {
+        setState(() => _isScanning = false);
+      }
     }
   }
 
   /// 高品質スキャン（全フィルタ適用）
   Future<void> _scanHighQuality() async {
-    // 権限チェック
-    if (!await _checkAndRequestPermissions()) {
-      return;
-    }
-
     setState(() => _isScanning = true);
     
     try {
@@ -119,21 +130,28 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
           _scannedImages.addAll(pictures);
         });
         _showResultDialog('高品質スキャン完了', '${pictures.length}枚の高品質画像を取得しました');
+      } else if (mounted) {
+        _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。もう一度お試しください。');
       }
     } catch (e) {
-      _showErrorDialog('高品質スキャン失敗', e.toString());
+      if (e.toString().contains('permission') || e.toString().contains('Permission')) {
+        setState(() => _isScanning = false);
+        if (!await _checkAndRequestPermissions()) {
+          return;
+        }
+        await _scanHighQuality();
+      } else {
+        _showErrorDialog('高品質スキャン失敗', 'エラー: ${e.toString()}');
+      }
     } finally {
-      setState(() => _isScanning = false);
+      if (_isScanning) {
+        setState(() => _isScanning = false);
+      }
     }
   }
 
   /// ギャラリーから選択してスキャン
   Future<void> _scanFromGallery() async {
-    // 権限チェック
-    if (!await _checkAndRequestPermissions()) {
-      return;
-    }
-
     setState(() => _isScanning = true);
     
     try {
@@ -147,21 +165,28 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
           _scannedImages.addAll(pictures);
         });
         _showResultDialog('ギャラリースキャン完了', '${pictures.length}枚の画像を処理しました');
+      } else if (mounted) {
+        _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。もう一度お試しください。');
       }
     } catch (e) {
-      _showErrorDialog('ギャラリースキャン失敗', e.toString());
+      if (e.toString().contains('permission') || e.toString().contains('Permission')) {
+        setState(() => _isScanning = false);
+        if (!await _checkAndRequestPermissions()) {
+          return;
+        }
+        await _scanFromGallery();
+      } else {
+        _showErrorDialog('ギャラリースキャン失敗', 'エラー: ${e.toString()}');
+      }
     } finally {
-      setState(() => _isScanning = false);
+      if (_isScanning) {
+        setState(() => _isScanning = false);
+      }
     }
   }
 
   /// カメラのみでスキャン（基本スキャンと同じ）
   Future<void> _scanCameraOnly() async {
-    // 権限チェック
-    if (!await _checkAndRequestPermissions()) {
-      return;
-    }
-
     setState(() => _isScanning = true);
     
     try {
@@ -174,11 +199,23 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
           _scannedImages.addAll(pictures);
         });
         _showResultDialog('カメラスキャン完了', '${pictures.length}枚の画像を取得しました');
+      } else if (mounted) {
+        _showErrorDialog('スキャン結果なし', '画像が取得できませんでした。もう一度お試しください。');
       }
     } catch (e) {
-      _showErrorDialog('カメラスキャン失敗', e.toString());
+      if (e.toString().contains('permission') || e.toString().contains('Permission')) {
+        setState(() => _isScanning = false);
+        if (!await _checkAndRequestPermissions()) {
+          return;
+        }
+        await _scanCameraOnly();
+      } else {
+        _showErrorDialog('カメラスキャン失敗', 'エラー: ${e.toString()}');
+      }
     } finally {
-      setState(() => _isScanning = false);
+      if (_isScanning) {
+        setState(() => _isScanning = false);
+      }
     }
   }
 
