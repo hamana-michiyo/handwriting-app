@@ -44,8 +44,14 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
       if (mounted) {
         // 拒否された権限の詳細を表示
         List<String> deniedPermissions = [];
+        bool hasPermanentlyDenied = false;
+        
         permissions.forEach((permission, status) {
           if (status != PermissionStatus.granted) {
+            if (status == PermissionStatus.permanentlyDenied) {
+              hasPermanentlyDenied = true;
+            }
+            
             switch (permission) {
               case Permission.camera:
                 deniedPermissions.add('カメラ');
@@ -62,10 +68,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
           }
         });
 
-        _showErrorDialog(
-          '権限が必要です',
-          '以下の権限が必要です: ${deniedPermissions.join('、')}\n\n設定アプリから権限を有効にしてください。',
-        );
+        _showPermissionDialog(deniedPermissions, hasPermanentlyDenied);
       }
     }
 
@@ -196,6 +199,108 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 権限リクエストダイアログ
+  void _showPermissionDialog(List<String> deniedPermissions, [bool hasPermanentlyDenied = false]) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // ダイアログ外タップで閉じないように
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.security, color: Colors.orange),
+            const SizedBox(width: 8),
+            const Text('権限が必要です'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(hasPermanentlyDenied 
+              ? 'Document Scannerを使用するには、設定アプリで以下の権限を有効にする必要があります：'
+              : 'Document Scannerを使用するには、以下の権限が必要です：'),
+            const SizedBox(height: 12),
+            ...deniedPermissions.map(
+              (permission) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Icon(
+                      hasPermanentlyDenied ? Icons.warning : Icons.check_circle_outline, 
+                      size: 16, 
+                      color: hasPermanentlyDenied ? Colors.orange : Colors.blue
+                    ),
+                    const SizedBox(width: 8),
+                    Text(permission, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (hasPermanentlyDenied) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '権限が永続的に拒否されています。設定アプリから手動で有効にしてください。',
+                        style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            const Text(
+              '設定手順：',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hasPermanentlyDenied 
+                ? '1. 「設定を開く」をタップ\n'
+                  '2. 権限設定画面が開きます\n'
+                  '3. 必要な権限をすべてオンにしてください\n'
+                  '4. アプリに戻ってもう一度お試しください'
+                : '1. 「設定を開く」をタップ\n'
+                  '2. アプリの権限設定画面が開きます\n'
+                  '3. 必要な権限をオンにしてください\n'
+                  '4. アプリに戻ってもう一度お試しください',
+              style: const TextStyle(fontSize: 14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await openAppSettings(); // 設定アプリを開く
+            },
+            icon: const Icon(Icons.settings),
+            label: const Text('設定を開く'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
