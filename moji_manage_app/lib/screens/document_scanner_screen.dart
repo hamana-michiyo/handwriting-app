@@ -18,11 +18,23 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
   /// 権限をチェックしてリクエスト
   Future<bool> _checkAndRequestPermissions() async {
-    Map<Permission, PermissionStatus> permissions = await [
-      Permission.camera,
-      Permission.storage,
-      Permission.photos,
-    ].request();
+    // iOS/Android で異なる権限をリクエスト
+    List<Permission> requiredPermissions = [];
+    
+    if (Platform.isIOS) {
+      requiredPermissions = [
+        Permission.camera,
+        Permission.photos,
+      ];
+    } else if (Platform.isAndroid) {
+      requiredPermissions = [
+        Permission.camera,
+        Permission.storage,
+        Permission.photos,
+      ];
+    }
+
+    Map<Permission, PermissionStatus> permissions = await requiredPermissions.request();
 
     bool allGranted = permissions.values.every(
       (status) => status == PermissionStatus.granted,
@@ -30,9 +42,29 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
 
     if (!allGranted) {
       if (mounted) {
+        // 拒否された権限の詳細を表示
+        List<String> deniedPermissions = [];
+        permissions.forEach((permission, status) {
+          if (status != PermissionStatus.granted) {
+            switch (permission) {
+              case Permission.camera:
+                deniedPermissions.add('カメラ');
+                break;
+              case Permission.photos:
+                deniedPermissions.add('フォトライブラリ');
+                break;
+              case Permission.storage:
+                deniedPermissions.add('ストレージ');
+                break;
+              default:
+                deniedPermissions.add(permission.toString());
+            }
+          }
+        });
+
         _showErrorDialog(
           '権限が必要です',
-          'カメラとストレージの権限が必要です。設定から権限を有効にしてください。',
+          '以下の権限が必要です: ${deniedPermissions.join('、')}\n\n設定アプリから権限を有効にしてください。',
         );
       }
     }

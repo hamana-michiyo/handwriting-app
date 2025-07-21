@@ -49,6 +49,14 @@
 	<string>手書き文字をカメラで撮影して評価するために使用します</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>保存された画像から手書き文字を読み込むために使用します</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>スキャンした画像をフォトライブラリに保存するために使用します</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>画像処理中にシステムが必要とする場合があります</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>スキャンした文書画像を保存するために使用します</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>このアプリは音楽にアクセスしません</string>
 
 </dict>
 </plist>
