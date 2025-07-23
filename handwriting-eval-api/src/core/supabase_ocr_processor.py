@@ -448,7 +448,7 @@ class SupabaseOCRProcessor:
                 
                 try:
                     # 機械学習用画像パスを取得
-                    ml_image_path = f"/workspace/debug/ml_training_{ml_key}.jpg"
+                    ml_image_path = f"/workspace/debug/{ml_key}.jpg"
                     if os.path.exists(ml_image_path):
                         with open(ml_image_path, 'rb') as f:
                             image_bytes = f.read()
@@ -485,7 +485,7 @@ class SupabaseOCRProcessor:
                 if auto_save and image_bytes:
                     try:
                         # 機械学習用データとして保存（文字は仮で設定）
-                        character_name = f"ml_training_{ml_key}"
+                        character_name = f"ml_{ml_key.replace('ml_char_', '')}"
                         
                         # 機械学習データセット専用保存
                         sample_data = self.supabase.create_writing_sample(

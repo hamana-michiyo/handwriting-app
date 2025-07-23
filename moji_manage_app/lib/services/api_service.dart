@@ -13,15 +13,15 @@ class ApiService {
   static String get _baseUrl {
     if (kDebugMode) {
       // デバッグモード（開発環境）
-      return _developmentUrl;
-      // return _productionUrl; // 本番環境に切り替え
+      //return _developmentUrl;
+      return _productionUrl; // 本番環境に切り替え
     } else {
       // リリースモード（本番環境）
       return _productionUrl;
     }
   }
   
-  static const Duration _timeout = Duration(seconds: 60);
+  static const Duration _timeout = Duration(seconds: 120);
   
   // エンドポイント
   static const String _processFormEndpoint = '/process-form';
