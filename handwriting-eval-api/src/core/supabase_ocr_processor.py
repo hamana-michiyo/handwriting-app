@@ -164,15 +164,6 @@ class SupabaseOCRProcessor:
                 )
                 results["character_results"] = char_results
             
-            # 機械学習用データ処理（右側・補助線除去済み）
-            if "ml_training_data" in ocr_results and ocr_results["ml_training_data"]:
-                ml_results = self._process_ml_training_data(
-                    ocr_results["ml_training_data"],
-                    writer_number, writer_age, writer_grade, auto_save
-                )
-                results["ml_training_data"] = ml_results
-                logger.info(f"機械学習用データ処理完了: {len(ml_results)}個")
-            
             # 数字認識結果処理
             if "writer_number" in ocr_results or "number_results" in ocr_results:
                 number_results = self._process_number_results(ocr_results)
@@ -312,27 +303,17 @@ class SupabaseOCRProcessor:
                 image_bytes = None
                 image_array = None
                 try:
-                    # まず右側機械学習用データ（補助線除去済み）を優先して取得
-                    # char_key (char_1, char_2, char_3) → ml_char_1, ml_char_2, ml_char_3 に変換
+                    # 保存用画像は機械学習用の右側手書き文字（補助線除去済み）を使用
                     char_key_to_ml_file = {"char_1": "ml_char_1", "char_2": "ml_char_2", "char_3": "ml_char_3"}
                     ml_file_name = char_key_to_ml_file.get(char_key, f"ml_{char_key}")
                     ml_image_path = f"/workspace/debug/{ml_file_name}.jpg"
                     if os.path.exists(ml_image_path):
                         with open(ml_image_path, 'rb') as f:
                             image_bytes = f.read()
-                        # 画像配列も読み込み（shape情報取得用）
                         image_array = cv2.imread(ml_image_path)
-                        logger.info(f"機械学習用画像（補助線除去済み）を使用: {ml_image_path}")
+                        logger.info(f"機械学習用画像（補助線除去済み）を保存用に使用: {ml_image_path}")
                     else:
-                        # フォールバック: 左側お手本画像（補助線除去なし）
-                        cleaned_image_path = f"/workspace/debug/improved_char_{char_key}.jpg"
-                        if os.path.exists(cleaned_image_path):
-                            with open(cleaned_image_path, 'rb') as f:
-                                image_bytes = f.read()
-                            image_array = cv2.imread(cleaned_image_path)
-                            logger.warning(f"フォールバック: お手本画像を使用（補助線除去なし）: {cleaned_image_path}")
-                        else:
-                            logger.warning(f"どちらの画像も見つかりません - ML: {ml_image_path}, お手本: {cleaned_image_path}")
+                        logger.warning(f"機械学習用画像が見つかりません: {ml_image_path}")
                         # フォールバック処理の場合は元画像データを使用
                         if "image" in char_data:
                             image_array = char_data["image"]
@@ -719,7 +700,7 @@ def main():
     if os.path.exists(test_image):
         results = processor.process_form_image(
             image_path=test_image,
-            writer_number="writer_demo",
+            writer_number="9995",
             writer_age=20,
             writer_grade="大学",
             auto_save=True

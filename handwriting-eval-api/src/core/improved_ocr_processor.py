@@ -542,7 +542,7 @@ class ImprovedOCRProcessor:
             return {}
         
         # 文字領域抽出・補助線除去・保存
-        character_results = {}
+        ml_character_results = {}
         char_names = ["ml_char_1", "ml_char_2", "ml_char_3"]
         margin = 10
         
@@ -561,7 +561,7 @@ class ImprovedOCRProcessor:
             cv2.imwrite(str(char_file), cleaned_region)
             logger.info(f"機械学習用文字領域保存: {char_file}")
             
-            character_results[name] = {
+            ml_character_results[name] = {
                 "image": region_image,  # 元画像
                 "cleaned_image": cleaned_region,  # 補助線除去後
                 "bbox": (x1, y1, x2, y2),
@@ -569,8 +569,8 @@ class ImprovedOCRProcessor:
                 "guideline_removed": True
             }
         
-        logger.info(f"機械学習用右側文字領域抽出完了: {len(character_results)}個")
-        return character_results
+        logger.info(f"機械学習用右側文字領域抽出完了: {len(ml_character_results)}個")
+        return ml_character_results
     
     def apply_lighting_correction(self, image: np.ndarray) -> np.ndarray:
         """軽い照明ムラ補正処理"""
@@ -624,7 +624,7 @@ class ImprovedOCRProcessor:
                 gray = image.copy() 
             # 画像の中央値に基づく動的なコントラスト調整
             median_intensity = np.median(gray)
-            print(f"Median intensity for contrast adjustment: {median_intensity}")
+            #print(f"Median intensity for contrast adjustment: {median_intensity}")
             # alpha, beta の値を中央値に基づいて調整
             # 120未満なら強めのコントラスト、120以上なら通常
             alpha = 1.2 if median_intensity < 120 else 1.1
@@ -754,8 +754,6 @@ class ImprovedOCRProcessor:
         # 3. 複数の二値化手法
         binary_methods = [
             ("otsu", cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
-            #("adaptive_mean", cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2)),
-            #("adaptive_gaussian", cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)),
             ("manual_light", cv2.threshold(blurred, 150, 255, cv2.THRESH_BINARY)[1]),
             ("manual_dark", cv2.threshold(blurred, 80, 255, cv2.THRESH_BINARY)[1])
         ]
@@ -906,11 +904,11 @@ class ImprovedOCRProcessor:
             # 点数候補: 正方形〜やや縦長
             if 0.9 < ratio < 1.2:
                 score_cand.append((X, y, w, h))
-                print(f"点数候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
+                #print(f"点数候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
             # コメント候補: 横長
             elif ratio > 4.0:  # 4.0に緩和（4.5 → 4.0）
                 cmt_cand.append((X, y, w, h))
-                print(f"コメント候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
+                #print(f"コメント候補: ({X}, {y}) {w}x{h} ratio={ratio:.2f}")
         
         if not score_cand:
             raise RuntimeError(f"点数枠が検出できません (候補数: {len(score_cand)})")
@@ -932,13 +930,13 @@ class ImprovedOCRProcessor:
                 return []
             # tol: 25px 以内のものを右端とみなす
             max_x = max(b[0] for b in boxes)
-            print(f"最大X座標: {max_x} (許容誤差: {tol})")
+            #print(f"最大X座標: {max_x} (許容誤差: {tol})")
             filtered = [b for b in boxes if abs(b[0] - max_x) <= tol]
-            print(f"フィルタ前: {len(boxes)}個, フィルタ後: {len(filtered)}個")
+            #print(f"フィルタ前: {len(boxes)}個, フィルタ後: {len(filtered)}個")
             for i, b in enumerate(boxes):
                 diff = abs(b[0] - max_x)
                 included = diff <= tol
-                print(f"  [{i}] X:{b[0]}, diff:{diff}, included:{included}")
+                #print(f"  [{i}] X:{b[0]}, diff:{diff}, included:{included}")
             return filtered
         
         score_cand = keep_rightmost(score_cand, 40)  # 40px 以内
@@ -948,12 +946,7 @@ class ImprovedOCRProcessor:
         # 候補が12個以上あるとき点数枠候補の平均の幅を計算
         if len(score_cand) > 12:
             before_width_filter = len(score_cand)
-            # 幅の平均を計算して、外れ値を除去
-            #avg_w = sum(b[2] for b in score_cand) / len(score_cand)
-            #print(f"平均幅: {avg_w:.1f}px, 許容範囲: {0.8*avg_w:.1f} - {1.2*avg_w:.1f}px")
-            # 幅が平均の 0.8〜1.2 倍のものだけ残す
-            #score_cand = [b for b in score_cand if 0.8 * avg_w < b[2] < 1.2 * avg_w]
-            
+            # 幅の四分位数を計算して外れ値を除去
             widths = np.array([b[2] for b in score_cand])
             q1, q3   = np.percentile(widths, [25, 75])
             print(f"幅の四分位数: Q1={q1:.1f}, Q3={q3:.1f}")
